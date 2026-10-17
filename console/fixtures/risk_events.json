@@ -1,0 +1,50 @@
+[
+  {
+    "risk_event_id": "risk_sim_0001",
+    "source_kind": "simulated",
+    "source_provider": "fixture",
+    "source_reference": "SIM-ADV-2026-014",
+    "source_url": null,
+    "published_at": "2026-10-17T06:00:00+00:00",
+    "category": "vessel_security_incident",
+    "severity": "high",
+    "description": "Simulated security incident reported in the transit corridor. Operators are reviewing routing for vessels scheduled through the affected region.",
+    "region_code": "GULF-TRANSIT",
+    "incident_point": null,
+    "geometry": null,
+    "affected_corridors": ["AEJEA-INBOM"],
+    "raw_payload_ref": null
+  },
+  {
+    "risk_event_id": "risk_sim_0002",
+    "source_kind": "simulated",
+    "source_provider": "fixture",
+    "source_reference": "SIM-ADV-2026-015",
+    "source_url": null,
+    "published_at": "2026-10-17T09:30:00+00:00",
+    "category": "port_congestion",
+    "severity": "medium",
+    "description": "Simulated berth congestion at the destination port, with multi-day waiting times reported for container vessels.",
+    "region_code": "INBOM-APPROACH",
+    "incident_point": null,
+    "geometry": null,
+    "affected_corridors": ["AEJEA-INBOM"],
+    "raw_payload_ref": null
+  },
+  {
+    "risk_event_id": "risk_sim_0003",
+    "source_kind": "simulated",
+    "source_provider": "fixture",
+    "source_reference": "SIM-ADV-2026-016",
+    "source_url": null,
+    "published_at": "2026-10-17T11:15:00+00:00",
+    "category": "mechanical_failure",
+    "severity": "high",
+    "description": "Simulated propulsion fault declared by the operator. Vessel is returning to port and scheduled sailings are under review.",
+    "region_code": "GULF-TRANSIT",
+    "incident_point": null,
+    "geometry": null,
+    "affected_corridors": ["AEJEA-INBOM"],
+    "raw_payload_ref": null
+  }
+]
