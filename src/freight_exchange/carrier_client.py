@@ -216,13 +216,12 @@ class CarrierClient:
         request: RequestOffer,
         on_sent: Callable[[CarrierRef, RequestOffer], Awaitable[None]] | None = None,
     ) -> CarrierOutcome:
-        started = time.perf_counter()
+        if on_sent:
+            await on_sent(carrier, request)
+        started = time.perf_counter()  # carrier round-trip only, excluding our own Tiger write
 
         def elapsed() -> int:
             return round((time.perf_counter() - started) * 1000)
-
-        if on_sent:
-            await on_sent(carrier, request)
         try:
             raw, resolution = await asyncio.wait_for(
                 self.transport.request(carrier, request, self.identity, self.timeout_s),

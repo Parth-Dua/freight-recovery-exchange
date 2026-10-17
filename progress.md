@@ -1,7 +1,7 @@
 # Progress — Autonomous Freight Recovery
 
 **Active phase:** 02 — Carrier Agents & Tiger (Phase 01 closed by user decision)  
-**Phase status:** Phase 01 CLOSED (user-confirmed ASI:One round-trip; T07/T08 not formally run). Phase 02 IN PROGRESS — WP1 (contracts) started; Tiger URL pending from user.  
+**Phase status:** Phase 01 CLOSED. Phase 02 IN PROGRESS — AT-02-01..04 PASS (live); AT-02-05 local HTTP pass, **ASI:One run NEEDS HUMAN VERIFICATION**.  
 **Updated:** 2026-10-17  
 **Scope:** Part 1. Part 2 blocked until Phase 8 passes.
 
@@ -66,6 +66,17 @@
 - Finding: `uagents_core.models.Model` is **pydantic v1** — contracts use `pydantic.v1` validators. `uagents.Model` is the same class; agent identity = `Identity.from_seed(seed, 0)`.
 - Done: `packages/freight_contracts` (RequestOffer, ProposeOffer, RejectOffer, AgentError, CargoSpec, typed RejectReason/ErrorCode, `parse_carrier_reply`, sign/verify). Smoke check: sign→parse→verify True; wrong address False; tampered price False; malformed/unknown/invalid payloads raise MalformedReply; same-port and naive timestamps rejected.
 - Next: Tiger migrations + seed (WP1/WP4), carrier project (WP2/3), Exchange CarrierClient + graph route (WP5), tests (WP6).
+
+### 2026-10-17 14:45 — Phase 02 (WP1–WP6 implemented, live evidence)
+- Done: Tiger migration `001_core.sql` (ports, carriers, carrier_policies, vessels, sailings, capacity_slots, cargo_requests, offers, agent_messages, holds/hold_slots, bookings/booking_slots, payment_records, disruption_events, recovery_runs/assignments, market_events, market_snapshots; PK/FK incl. composite (sailing_id, carrier_id) ownership FKs, unique keys, CHECKs, `source_kind IN (simulated, external)`). Runner checks TimescaleDB version → `by_range` API. Idempotent seed from `fixtures/demo_carriers.json`. Carrier runtime `carriers/` (uAgents 0.26.1, 3 processes, Almanac API registration, startup check seed-address == Tiger). Exchange: `carrier_client` (uagents-core sync envelopes, Almanac→registry fallback, ordered validation), `quotes`, `repository` (events in same tx), `request_parser`, async graph node; Ref id == Tiger request_id. Removed Phase 1 static catalog (superseded by 0003).
+- **AT-02-01 PASS:** Tiger (TimescaleDB 2.30.2) cold `scripts/db.py migrate`+`seed` ×2 → run 2 "none (already current)", slots_inserted 0, counts ports 2 / carriers 3 / policies 3 / vessels 3 / sailings 6 / slots 18; hypertables market_events, market_snapshots.
+- **AT-02-02 + AT-02-04 PASS:** `scripts/quote_smoke.py` req_f8e16e7ff59b (flow_98a0f0df6704): atlas PROPOSE ATL-101 $5,200, beacon PROPOSE BEA-201 $5,500, cove REJECT INSUFFICIENT_CAPACITY; 3/3 signatures verified vs Tiger addresses (atlas agent1qvjf…7evk, beacon agent1q25t…x3tl, cove agent1q0d9…grlp); resolution=almanac. Tiger: 1 cargo_request QUOTED, 2 offers (FK-verified sailing ownership), 6 agent_messages, 8 market_events (CARGO_REQUEST_CREATED → 3×OFFER_REQUESTED → 2×OFFER_SUBMITTED + OFFER_DECLINED → QUOTE_ROUND_COMPLETED).
+- **AT-02-03 PASS (live carriers + unit):** `scripts/acp_failure_smoke.py` → UNAUTHORIZED_REQUESTER, INVALID_CARGO_REQUEST, REQUEST_EXPIRED (carrier AGENT_ERRORs, signed), UNSUPPORTED_CONTAINER_TYPE (REJECT), CARRIER_UNREACHABLE (unknown carrier), unknown-schema payload → CARRIER_TIMEOUT ("Query envelope expired"; uAgents drops unknown schemas), control → offer. Unit (`tests/test_carrier_client.py`): MALFORMED_REPLY, UNKNOWN_CARRIER, INVALID_SIGNATURE (wrong key/unsigned/tampered), CORRELATION_MISMATCH, STALE_OFFER, OFFER_CONSTRAINT_VIOLATION ×4, timeout.
+- **AT-02-05:** Exchange restarted (mailbox, `Registered with agentverse`, `Mailbox client started`); local SDK-shaped `/threads/{id}/runs/wait` with PRD prompt → live 3-carrier table, req_df13eeade8f3, carrier RTT 813–899 ms. **ASI:One run pending human.**
+- Tests: `uv run pytest -q` 55 passed; `carriers: uv run pytest -q` 16 passed.
+- Findings/decisions: macOS keeps re-setting `hidden` flag on `.venv/**/*.pth` (repo in iCloud-synced ~/Documents; iCloud " 2" duplicate seen) and Python skips hidden .pth → freight-contracts installed non-editable; CLIs in `scripts/` add `src` to sys.path. Tiger password via `PGPASSWORD` (URL has no password). Carriers bind 0.0.0.0 (uAgents default) but only serve signed requests from EXCHANGE_AGENT_ADDRESS. uAgents sync queries keyed by sender → concurrent rounds to same carrier may collide (Phase 3 risk).
+- Repo: private GitHub https://github.com/Parth-Dua/freight-recovery-exchange (own git repo in project dir; parent home-dir repo untouched). Secret scan of staged files: none of AGENT_URI key / carrier seeds / PGPASSWORD present.
+- Next action: user sends in ASI:One `@freight-recovery-exc Quote 2x20GP from Jebel Ali to Mumbai, arrive by Oct 23, budget $5,600, don't split` → match Ref ↔ `request_handled` + Tiger row → mark AT-02-05 and Phase 2 gate. Then Phase 3 spec.
 
 ## Checkpoint template (append concise updates)
 ### YYYY-MM-DD HH:MM — Phase NN

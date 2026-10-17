@@ -10,34 +10,43 @@ Follow phases 01→08, gated by observable acceptance evidence. Phase 01 was pre
 
 ---
 
-## Phase 1 runbook — Exchange Agent (ACP connectivity)
+## Runbook (Phase 1 + Phase 2)
 
-**Stack (locked in `uv.lock`):** Python 3.12, `agentverse-sdk[langgraph]==0.2.1` (provides `langgraph-av`), langgraph 1.2.16, langgraph-cli 0.4.36, langgraph-api 0.9.1, uagents-core 0.4.12.
+**Layout**
+- `src/agent.py` — Exchange Agent graph (`langgraph.json` → `agent:agent`), registered on Agentverse as `@freight-recovery-exc`, mailbox mode.
+- `src/freight_exchange/` — routing/replies, request parser, `carrier_client` (uAgents sync transport + reply validation), `quotes` (quote round), `repository` (Tiger), `db/` (migrations + seed).
+- `packages/freight_contracts/` — shared versioned messages (`REQUEST_OFFER`, `PROPOSE_OFFER`, `REJECT_OFFER`, `AGENT_ERROR`) + carrier signing. Used by both runtimes.
+- `carriers/` — company Carrier Agents (uAgents 0.26.1), **separate uv project** (uagents needs protobuf 5; langgraph-api needs ≥6). See `docs/decisions/0002`.
+- `fixtures/demo_carriers.json` — fictional Atlas/Beacon/Cove, AEJEA→INBOM 20GP sailings.
 
-**Layout:** `src/agent.py` exports the `agent` graph (`langgraph.json` → `"agent": "agent:agent"`; `langgraph-av` puts `src/` on the import path). `src/freight_exchange/` holds the capability fixture, deterministic reply routing, Agentverse profile/README and structured logging. The graph is a single deterministic node — no LLM, so `ASI1_API_KEY` is not needed in Phase 1.
-
+**Setup (once)**
 ```bash
-uv sync                    # install pinned deps
-uv run pytest -q           # unit + SDK-contract tests
-
-# Local only (no Agentverse): AGENT_URI unset → SDK init skipped
-uv run langgraph-av dev --no-browser --port 2024
-curl -s -X POST localhost:2024/runs/wait -H 'content-type: application/json' \
-  -d '{"assistant_id":"agent","input":{"messages":[{"role":"human","content":"What corridors do you currently support?"}]}}'
-
-# Agentverse: put AGENT_URI in .env (gitignored; append ?log=INFO to see SDK logs), then
-# Default = mailbox mode (AGENTVERSE_MAILBOX=true): agent polls Agentverse, no tunnel needed
-uv run langgraph-av dev --no-browser
-
-# Fallback: official tunnel path (set AGENTVERSE_MAILBOX=false). Use http2 — the default
-# QUIC tunnel dropped every ~1 min on campus Wi-Fi, and quick tunnels get deleted on disconnect.
-TUNNEL_TRANSPORT_PROTOCOL=http2 uv run langgraph-av dev --tunnel --no-browser
+cp .env.example .env            # fill AGENT_URI, TIGER_DATABASE_URL, PGPASSWORD (never commit)
+uv sync && (cd carriers && uv sync)
+uv run python scripts/init_carrier_identities.py   # creates carrier seeds in .env, prints addresses
+uv run python scripts/db.py migrate                # Tiger schema + hypertables (idempotent)
+uv run python scripts/db.py seed                   # fictional carriers/sailings (idempotent)
 ```
 
-The SDK logger is silent by default (level CRITICAL); add `?log=INFO` to the end of `AGENT_URI` to see `Registered with agentverse` and any suppressed init/registration errors. Healthy mailbox startup logs `Registered with agentverse` then `Mailbox client started for agent1q…`; the public Almanac (`https://agentverse.ai/v1/almanac/agents/<address>`) shows `"type":"mailbox"`. In tunnel mode each restart gets a new trycloudflare URL and the SDK re-registers it.
+**Run (two terminals)**
+```bash
+./scripts/run_carriers.sh                          # Atlas :8101, Beacon :8102, Cove :8103
+uv run langgraph-av dev --no-browser               # Exchange Agent (Agentverse mailbox)
+```
 
-**`AGENT_URI` is a secret.** Its format is `https://<handle>:<key>@agentverse.ai/<name>` and the SDK derives the agent identity from `<key>` (`Identity.from_seed`). Never paste it into chat, logs, commits or `progress.md`.
+**Verify**
+```bash
+uv run pytest -q && (cd carriers && uv run pytest -q)
+uv run python scripts/quote_smoke.py               # real quote round + Tiger SELECT evidence
+uv run python scripts/acp_failure_smoke.py         # typed errors from live carriers
+```
+In ASI:One: `@freight-recovery-exc Quote 2x20GP from Jebel Ali to Mumbai, arrive by Oct 23, budget $5,600, don't split`. Every reply ends with `Ref: req_…`, which is also the Tiger `cargo_requests.request_id`.
 
-**Registration (manual, Agentverse UI):** Agents → Launch an Agent → External Agent → LangGraph → name **Freight Recovery Exchange (Demo)** → keywords `ocean freight`, `cargo booking`, `shipping agent`, `shipment recovery`, `maritime disruption` → copy the Agent URI into `.env` → run with `--tunnel` → click *Evaluate registration*. Description, README and starter prompts are pushed from `src/freight_exchange/profile.py` at each startup.
-
-**Verifying a round-trip:** every reply ends with `Ref: req_<12 hex>`; the backend logs one `request_handled` JSON line with the same `request_id`, the route, status, duration and the Agentverse sender/session. Message text is never logged. Known-good prompt: `What corridors do you currently support?` → contains `Phase 1 catalog: Shanghai (CNSHA) → Los Angeles (USLAX)`.
+**Gotchas**
+- `AGENT_URI` contains the agent's private key. Treat it, `CARRIER_*_SEED` and `PGPASSWORD` as secrets.
+- Only one machine should run the Exchange with a given `AGENT_URI` (they would share one mailbox).
+- Carriers must run on the same machine as the Exchange (localhost endpoints, resolved via Almanac).
+- Set `?log=INFO` at the end of `AGENT_URI` to see Agentverse SDK logs (silent by default).
+- This repo lives in an iCloud-synced folder on one machine; macOS re-hides `.pth` files there and Python skips hidden `.pth` files, so `freight-contracts` is installed **non-editable**. After editing contracts: `uv sync --reinstall-package freight-contracts` (and in `carriers/`).
+- Sailing dates are relative to `anchor_date` in the fixture; re-anchor with `uv run python scripts/db.py seed --anchor 2026-10-25T00:00:00Z`.
+- Tunnel fallback: `AGENTVERSE_MAILBOX=false TUNNEL_TRANSPORT_PROTOCOL=http2 uv run langgraph-av dev --tunnel --no-browser`.
