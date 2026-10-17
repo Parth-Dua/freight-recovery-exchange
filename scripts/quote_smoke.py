@@ -34,7 +34,7 @@ async def main(text: str) -> None:
     cargo = to_cargo_spec(parsed, utcnow())
     request_id = new_request_id()
     rnd = await QuoteService(repo, CarrierClient(identity)).run(cargo, buyer_id="smoke-test", request_id=request_id)
-    print(responses.quotes_reply(parsed, rnd.outcomes, request_id))
+    print(responses.quotes_reply(parsed, rnd))
     print("\n--- Tiger evidence for", request_id, "/", rnd.correlation_id)
     async with repo.pool.connection() as conn:
         for title, sql in [

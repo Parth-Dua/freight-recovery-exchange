@@ -1,0 +1,11 @@
+# 0004 — Bounded negotiation, selection and chat idempotency (Phase 3)
+
+- **Date:** 2026-10-17 · **Status:** Accepted (defaults chosen while user's two questions were open; user said "start Phase 3") · **Phase:** 3
+- **Negotiation timing:** automatic, inside the same quote turn (`NEGOTIATION_MODE=auto`; `off` disables). One `COUNTER_OFFER` per carrier, in parallel.
+- **Buyer counter rule:** `NEGOTIATION_DISCOUNT_PCT` (default 5) below the best opening offer, capped by the buyer budget and the carrier's own offer, rounded down to $10. The budget is never sent to carriers.
+- **Carrier rule (private, per company):** `min_acceptable = max(floor, opening × (1 − concession_pct))`. Counter ≥ min → `ACCEPT_COUNTER` (new signed offer at the counter price); floor ≤ counter < min → `REVISED_OFFER` at min; counter < floor → `REJECT_COUNTER BELOW_POLICY` (floor not revealed). `enforce_floor` guards every price path. Fixture concessions: Atlas 10%, Beacon 4%, Cove 3%.
+- **One counter per offer** is enforced by the carrier in Tiger (`carrier_offer_log.counters_used` CHECK ≤ 1 + atomic `UPDATE … WHERE counters_used = 0`), and counters on negotiated (round-2) offers are refused.
+- **Exchange validation of counter replies:** same sailing/quantity/terms, price ≤ opening, ACCEPT price == counter, REVISED ≥ counter, not expired, signature + correlation; otherwise typed `OFFER_CONSTRAINT_VIOLATION` / `CORRELATION_MISMATCH` and the opening offer stands.
+- **Selection:** text fallback (rank, carrier name, cheapest/fastest, offer id, card-style JSON) resolved only against offers presented for the session's latest request (`offers.display_rank`). Persisted as `OFFER_SELECTED` (`offer_selections`, unique per request) — not a hold, not a booking. Expired → `OFFER_EXPIRED` + `requote`. Interactive Cards deferred by user.
+- **Clarification:** quantity is required (no longer assumed); unserved lanes and container types are clarified before any carrier call; a pending clarification is kept in LangGraph thread state and completed by the next message.
+- **Idempotency:** ASI:One duplicate deliveries are answered with the original reply via `chat_turns` keyed by sha256(session | normalized text), 120 s window.

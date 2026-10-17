@@ -1,17 +1,26 @@
-"""Exchange Agent — LangGraph graph, exported as ``agent`` for langgraph.json.
+"""Exchange Agent — BookingGraph (through offer selection), exported as ``agent`` for langgraph.json.
 
-One deterministic async node (no LLM): routes the chat turn, and for quotes
-fans out REQUEST_OFFER to the carrier agents and persists everything in Tiger.
-When ``AGENT_URI`` is set, the Agentverse SDK exposes the graph over the Agent
-Chat Protocol (mailbox mode).
+    start (dedupe + route) ─┬─ quote    : parse → clarify | quote round + one counter per carrier
+                            ├─ requote  : re-run the session's latest request
+                            ├─ select   : persist OFFER_SELECTED (not a hold, not a booking)
+                            ├─ info     : corridors / capabilities / not-yet-active replies
+                            └───────────┴─→ finish (store turn for dedupe, log, reply)
+
+Deterministic (no LLM). Business state lives in Tiger keyed by request_id; the thread
+state only carries a pending clarification. When ``AGENT_URI`` is set the Agentverse SDK
+exposes the graph over the Agent Chat Protocol (mailbox mode).
 """
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import logging
 import os
+import re
 import time
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, HumanMessage
@@ -22,15 +31,27 @@ from freight_exchange import responses as r
 from freight_exchange.carrier_client import CarrierClient
 from freight_exchange.config import carrier_timeout_seconds
 from freight_exchange.observability import log_event, new_request_id
-from freight_exchange.quotes import InvalidCargoRequest, QuoteService, exchange_identity, to_cargo_spec, utcnow
+from freight_exchange.quotes import (
+    InvalidCargoRequest, QuoteService, cargo_from_requirements, exchange_identity, to_cargo_spec, utcnow,
+)
 from freight_exchange.repository import Repository, get_repository
 from freight_exchange.request_parser import parse_request
+from freight_exchange.selection import resolve_choice
 
 # langgraph-av imports this module before the CLI loads .env, so load it here.
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 ERROR_REPLY = "Sorry, I couldn't handle that request. It is safe to retry."
 SERVICE_UNAVAILABLE_REPLY = "The quote service is temporarily unavailable. Nothing was booked; it is safe to retry."
+DUPLICATE_WINDOW_S = 120
+DUPLICATE_WAIT_S = 45
+DATA_ROUTES = {r.ROUTE_CORRIDORS, r.ROUTE_QUOTES, r.ROUTE_REQUOTE, r.ROUTE_SELECT}
+_BARE_NUMBER = re.compile(r"^\s*#?\s*(\d{1,2})\s*$")
+
+
+class ExchangeState(MessagesState):
+    pending_text: str | None  # partial quote request waiting for a clarification answer
+    turn: dict[str, Any]      # per-turn scratch (reset by `start`)
 
 
 async def get_services() -> tuple[Repository, QuoteService]:
@@ -40,72 +61,194 @@ async def get_services() -> tuple[Repository, QuoteService]:
     return repo, QuoteService(repo, CarrierClient(identity, timeout_s=carrier_timeout_seconds()))
 
 
-async def handle(text: str, request_id: str, buyer_id: str) -> tuple[str, str]:
-    """Return (route, reply text) for one chat turn."""
-    text = r.strip_mentions(text)
-    route = r.classify(text)
-    if route not in (r.ROUTE_CORRIDORS, r.ROUTE_QUOTES):
-        return route, r.static_reply(route)
-
-    repo, quotes = await get_services()
-    if route == r.ROUTE_CORRIDORS:
-        return route, r.corridors_reply(await repo.corridors())
-
-    parsed = parse_request(text, await repo.ports(), utcnow())
-    if parsed.missing:
-        return route, r.missing_info_reply(parsed, await repo.corridors())
-    try:
-        cargo = to_cargo_spec(parsed, utcnow())
-    except InvalidCargoRequest as exc:
-        return route, r.invalid_request_reply(str(exc))
-    round_ = await quotes.run(cargo, buyer_id=buyer_id, request_id=request_id)
-    return route, r.quotes_reply(parsed, round_.outcomes, request_id)
-
-
-def _last_human_text(state: MessagesState) -> str:
+def _last_human_text(state: ExchangeState) -> str:
     for message in reversed(state.get("messages", [])):
         if isinstance(message, HumanMessage):
             return message.text
     return ""
 
 
-async def respond(state: MessagesState, config: RunnableConfig) -> dict:
-    request_id = new_request_id()
-    started = time.perf_counter()
+def _route_with_context(text: str, pending: str | None) -> tuple[str, str]:
+    """Return (route, text to parse). A pending clarification absorbs short follow-ups."""
+    route = r.classify(text)
+    if pending and route in (r.ROUTE_UNSUPPORTED, r.ROUTE_QUOTES, r.ROUTE_CORRIDORS, r.ROUTE_SELECT):
+        m = _BARE_NUMBER.match(text)
+        if route != r.ROUTE_SELECT or m:
+            addition = f"{m.group(1)} containers" if m else text
+            return r.ROUTE_QUOTES, f"{pending} {addition}"
+    return route, text
+
+
+# ---- nodes ---------------------------------------------------------------------
+async def start(state: ExchangeState, config: RunnableConfig) -> dict:
     metadata = config.get("metadata") or {}
-    correlation = {
-        "request_id": request_id,
-        "agentverse_sender": metadata.get("agentverse_sender"),
-        "agentverse_session": metadata.get("agentverse_session"),
-        "thread_id": metadata.get("thread_id"),
+    raw = _last_human_text(state)
+    text = r.strip_mentions(raw)
+    session = str(metadata.get("agentverse_session") or metadata.get("thread_id") or "local")
+    turn = {
+        "ref": new_request_id(), "raw_chars": len(raw), "text": text, "session": session,
+        "buyer": metadata.get("agentverse_sender") or "local", "started": time.perf_counter(),
+        "correlation": {"agentverse_sender": metadata.get("agentverse_sender"),
+                        "agentverse_session": metadata.get("agentverse_session"),
+                        "thread_id": metadata.get("thread_id")},
+        "status": "ok", "turn_key": None, "duplicate_of": None,
     }
+    route, parse_text = _route_with_context(text, state.get("pending_text"))
+    turn.update(route=route, parse_text=parse_text)
 
-    text, route = "", r.ROUTE_UNSUPPORTED
+    # ASI:One may deliver the same message twice: answer duplicates with the original reply.
     try:
-        text = _last_human_text(state)
-        route = r.classify(r.strip_mentions(text))
-        route, body = await handle(text, request_id, metadata.get("agentverse_sender") or "local")
-        status = "ok"
-    except Exception as exc:  # retry-safe error instead of crashing the ACP turn
-        status = "error"
-        body = SERVICE_UNAVAILABLE_REPLY if route in (r.ROUTE_CORRIDORS, r.ROUTE_QUOTES) else ERROR_REPLY
-        log_event("request_failed", logging.ERROR, error_type=type(exc).__name__, route=route, **correlation)
+        repo, _ = await get_services()
+        key = hashlib.sha256(f"{session}|{' '.join(text.lower().split())}".encode()).hexdigest()
+        existing = await repo.claim_turn(key, session, turn["ref"], DUPLICATE_WINDOW_S)
+        if existing is None:
+            turn["turn_key"] = key
+        else:
+            deadline = time.monotonic() + DUPLICATE_WAIT_S
+            while existing and existing["status"] != "DONE" and time.monotonic() < deadline:
+                await asyncio.sleep(0.5)
+                existing = await repo.get_turn(key)
+            turn.update(route="duplicate", duplicate_of=existing["request_ref"] if existing else None,
+                        reply=existing.get("reply") if existing else None)
+    except Exception as exc:  # dedupe is best-effort; never block a reply on it
+        log_event("dedupe_unavailable", logging.WARNING, error_type=type(exc).__name__, request_id=turn["ref"])
+    return {"turn": turn}
 
+
+def _guarded(fn):
+    async def node(state: ExchangeState) -> dict:
+        turn = dict(state["turn"])
+        try:
+            update = await fn(state, turn)
+        except Exception as exc:  # retry-safe error instead of crashing the ACP turn
+            turn["status"] = "error"
+            turn["body"] = SERVICE_UNAVAILABLE_REPLY if turn["route"] in DATA_ROUTES else ERROR_REPLY
+            log_event("request_failed", logging.ERROR, error_type=type(exc).__name__, route=turn["route"],
+                      request_id=turn["ref"], **turn["correlation"])
+            update = {}
+        return {"turn": turn, **update}
+
+    node.__name__ = fn.__name__
+    return node
+
+
+@_guarded
+async def quote(state: ExchangeState, turn: dict) -> dict:
+    repo, quotes = await get_services()
+    ports = await repo.ports()
+    parsed = parse_request(turn["text"], ports, utcnow())
+    if parsed.missing and turn["parse_text"] != turn["text"]:  # combine with the pending clarification
+        parsed = parse_request(turn["parse_text"], ports, utcnow())
+    corridors = await repo.corridors()
+    if parsed.missing:
+        turn["body"] = r.clarification_reply(parsed, corridors)
+        return {"pending_text": turn["parse_text"]}
+    lane = next((c for c in corridors if (c.origin.port_code, c.destination.port_code) ==
+                 (parsed.origin.port_code, parsed.destination.port_code)), None)
+    if lane is None:
+        parsed.origin = parsed.destination = None
+        turn["body"] = r.clarification_reply(parsed, corridors)
+        return {"pending_text": None}
+    if parsed.container_type not in lane.container_types:
+        turn["body"] = r.container_not_offered_reply(parsed.container_type, lane)
+        return {"pending_text": None}
+    try:
+        cargo = to_cargo_spec(parsed, utcnow())
+    except InvalidCargoRequest as exc:
+        turn["body"] = r.invalid_request_reply(str(exc))
+        return {"pending_text": None}
+    round_ = await quotes.run(cargo, buyer_id=turn["buyer"], request_id=turn["ref"], session_id=turn["session"])
+    turn["body"] = r.quotes_reply(parsed, round_)
+    return {"pending_text": None}
+
+
+@_guarded
+async def requote(state: ExchangeState, turn: dict) -> dict:
+    repo, quotes = await get_services()
+    latest = await repo.latest_request(turn["session"])
+    if latest is None:
+        turn["body"] = r.no_quotes_yet_reply()
+        return {}
+    cargo = cargo_from_requirements(latest["requirements"])
+    if cargo.latest_arrival is not None and cargo.latest_arrival <= utcnow():
+        turn["body"] = r.invalid_request_reply("the original arrival deadline has passed; send a new request")
+        return {}
+    round_ = await quotes.run(cargo, buyer_id=turn["buyer"], request_id=turn["ref"], session_id=turn["session"])
+    turn["body"] = r.quotes_reply(cargo, round_)
+    return {"pending_text": None}
+
+
+@_guarded
+async def select(state: ExchangeState, turn: dict) -> dict:
+    repo, _ = await get_services()
+    latest = await repo.latest_request(turn["session"])
+    offers = await repo.presented_offers(latest["request_id"]) if latest else []
+    if not offers:
+        turn["body"] = r.no_quotes_yet_reply()
+        return {}
+    choice = resolve_choice(turn["text"], offers)
+    if choice is None or choice.offer_id is None:
+        turn["body"] = r.selection_problem_reply(choice.problem if choice else "say an option number", offers)
+        return {}
+    offer = next(o for o in offers if o["offer_id"] == choice.offer_id)
+    result = await repo.select_offer(latest["request_id"], choice.offer_id, session_id=turn["session"],
+                                     source=choice.source)
+    if result["status"] in ("SELECTED", "ALREADY_SELECTED"):
+        refreshed = next(o for o in await repo.presented_offers(latest["request_id"]) if o["offer_id"] == offer["offer_id"])
+        turn["body"] = r.selected_reply(refreshed, latest["request_id"], already=result["status"] == "ALREADY_SELECTED")
+    elif result["status"] == "OFFER_EXPIRED":
+        turn["body"] = r.offer_expired_reply(offer["display_rank"])
+    else:
+        turn["body"] = r.selection_problem_reply("that offer is no longer selectable", offers)
+    return {}
+
+
+@_guarded
+async def info(state: ExchangeState, turn: dict) -> dict:
+    if turn["route"] == r.ROUTE_CORRIDORS:
+        repo, _ = await get_services()
+        turn["body"] = r.corridors_reply(await repo.corridors())
+    else:
+        turn["body"] = r.static_reply(turn["route"])
+    return {}
+
+
+async def finish(state: ExchangeState) -> dict:
+    turn = state["turn"]
+    if turn["route"] == "duplicate":
+        content = turn.get("reply") or (
+            f"Still working on your previous identical message (Ref: {turn['duplicate_of']}); it is safe to retry.")
+    else:
+        content = f"{turn.get('body', ERROR_REPLY)}\n{r.STATUS_LINE}\nRef: {turn['ref']}"
+        if turn.get("turn_key"):
+            try:
+                repo, _ = await get_services()
+                await repo.complete_turn(turn["turn_key"], turn["route"], content)
+            except Exception as exc:
+                log_event("dedupe_unavailable", logging.WARNING, error_type=type(exc).__name__, request_id=turn["ref"])
     log_event(
-        "request_handled",
-        route=route,
-        status=status,
-        input_chars=len(text),
-        duration_ms=round((time.perf_counter() - started) * 1000, 2),
-        **correlation,
+        "request_handled", route=turn["route"], status=turn["status"], input_chars=turn["raw_chars"],
+        duplicate_of=turn.get("duplicate_of"), request_id=turn["ref"],
+        duration_ms=round((time.perf_counter() - turn["started"]) * 1000, 2), **turn["correlation"],
     )
-    return {"messages": [AIMessage(content=f"{body}\n{r.STATUS_LINE}\nRef: {request_id}")]}
+    return {"messages": [AIMessage(content=content)]}
 
 
-_builder = StateGraph(MessagesState)
-_builder.add_node("respond", respond)
-_builder.add_edge(START, "respond")
-_builder.add_edge("respond", END)
+def _next(state: ExchangeState) -> str:
+    route = state["turn"]["route"]
+    return {"duplicate": "finish", r.ROUTE_QUOTES: "quote", r.ROUTE_REQUOTE: "requote",
+            r.ROUTE_SELECT: "select"}.get(route, "info")
+
+
+_builder = StateGraph(ExchangeState)
+for _name, _node in (("start", start), ("quote", quote), ("requote", requote), ("select", select),
+                     ("info", info), ("finish", finish)):
+    _builder.add_node(_name, _node)
+_builder.add_edge(START, "start")
+_builder.add_conditional_edges("start", _next, ["quote", "requote", "select", "info", "finish"])
+for _name in ("quote", "requote", "select", "info"):
+    _builder.add_edge(_name, "finish")
+_builder.add_edge("finish", END)
 agent = _builder.compile()
 
 
@@ -120,7 +263,7 @@ def _init_agentverse() -> None:
     from freight_exchange.profile import build_profile
 
     # Mailbox mode (default): the agent polls Agentverse, so no public tunnel is
-    # needed. Decision 2026-10-17 after quick tunnels kept dying; see progress.md.
+    # needed. Decision 0001; see docs/decisions.
     mailbox = os.getenv("AGENTVERSE_MAILBOX", "true").strip().lower() not in ("0", "false", "no")
 
     # The SDK masks the key in its own logs; never log agent_uri here.
