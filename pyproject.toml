@@ -13,6 +13,7 @@ dependencies = [
     "langgraph-api==0.9.1",
     "freight-contracts",
     "psycopg-pool>=3.2,<4",
+    "freight-seams",
 ]
 
 [dependency-groups]
@@ -27,3 +28,4 @@ testpaths = ["tests"]
 # After changing contracts: uv sync --reinstall-package freight-contracts
 [tool.uv.sources]
 freight-contracts = { path = "packages/freight_contracts", editable = false }
+freight-seams = { path = "packages/freight_seams", editable = false }

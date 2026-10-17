@@ -106,6 +106,14 @@
 - Risks: round latency ~8–11 s (Tiger round-trips from laptop); dedupe window 120 s means an intentional identical repeat within 2 min returns the cached reply; ASI:One planner may paraphrase "select 1" (rank/carrier/cheapest parsing covers common forms).
 - Next action: user runs ASI:One steps in README / chat (quote → select 1 → wait >10 min → select 2 expects OFFER_EXPIRED → requote) → record AT-03-02/04 → mark Phase 3 PASSED → Phase 4 spec.
 
+### 2026-10-17 16:05 — [Parth] Phase 03 ASI:One evidence + Tisya's NEEDS-FROM-PARTH (branch parth/seams-and-disruption-status)
+- AT-03-04 via ASI:One: session 1f0e6304-…, `select 2` after expiry (offers valid to 22:30 UTC) → reply OFFER_EXPIRED + requote hint (req_5479e247abde); Tiger: beacon round-2 offer EXPIRED, OFFER_EXPIRED event, 0 selections, request still QUOTED. Same session: clarification asked for destination + quantity; duplicate delivery req_8d38b409ffd4 answered from cache (no 2nd round). AT-03-02 (successful select in ASI:One) still pending: user to `requote` then `select 1` within 10 min.
+- Tisya's requests done: (1) root `pyproject.toml` depends on `freight-seams` (non-editable path). (2) disruption/withdraw/recover/"my booking" messages → new graph node `status` → `TigerBookingSeam.recent_withdrawals()` + `bookings_for_buyer(sender)` → real Tiger reply (spec 05 WP6); recovery stated as not active; route name now `disruption_status`, checked before booking words. `TigerBookingSeam` satisfies `freight_seams.BookingSeam`; `commit_booking` raises NotImplementedError until Phase 4. (3) migration `003_disruption_command_fields.sql`: nullable `reason_risk_event_id`, `authorization_ref`, `idempotency_key` (+ partial unique index) on `disruption_events` — applied to Parth's Tiger.
+- Tests: root 117 passed; carriers 54; freight_seams 12; console unit (`test_withdrawal_logic.py`, no DB) 13. Console live tests NOT run against Parth's Tiger (they withdraw sailings; seed does not un-withdraw). Live read on Parth's Tiger: "No sailings have been withdrawn", no bookings for the ASI:One sender (accurate).
+- Risk for Phase 4: buyer identity = ASI:One `agentverse_sender`; the same address appeared across sessions, so it may be shared by ASI:One users — must be decided before bookings_for_buyer shows real bookings.
+- NEEDS-FROM-TISYA: console can write the 3 new columns instead of packing them into `reason`; run `uv run python scripts/db.py migrate` on her Tiger.
+- Next: PR for review (do not merge without user); user runs AT-03-02 in ASI:One; then Phase 4.
+
 ## Checkpoint template (append concise updates)
 ### YYYY-MM-DD HH:MM — Phase NN
 - Done:
