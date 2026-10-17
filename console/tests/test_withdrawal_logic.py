@@ -107,3 +107,28 @@ def test_withdrawn_sailing_has_no_form() -> None:
 
 def test_chip_falls_back_for_unknown_status() -> None:
     assert "chip other" in _chip("DEPARTED")
+
+
+def test_preseed_refuses_buyer_a() -> None:
+    """PRD 16.1: Buyer A must be booked live in ASI:One, never preseeded."""
+    from carrier_console.preseed import LIVE_ONLY_BUYERS
+
+    assert "buyer_a" in LIVE_ONLY_BUYERS
+
+
+def test_preseed_signature_is_obviously_not_a_real_one() -> None:
+    """A preseeded offer must never be mistaken for a verified carrier signature."""
+    from carrier_console.preseed import PRESEED_SIGNATURE
+
+    assert "NOT_A_VERIFIED" in PRESEED_SIGNATURE
+
+
+def test_preseed_claims_capacity_before_writing_a_booking() -> None:
+    """No overselling: slots are claimed under FOR UPDATE and refused if short."""
+    import inspect
+
+    from carrier_console import preseed
+
+    source = inspect.getsource(preseed._claim_slots)
+    assert "FOR UPDATE" in source
+    assert "PreseedRefused" in source

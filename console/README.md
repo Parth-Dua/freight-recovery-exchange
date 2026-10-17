@@ -38,6 +38,23 @@ TIGER_DATABASE_URL=... uv run pytest -q   # adds the live Tiger suite
 `test_withdrawal_logic.py` is unit-only and proves nothing about Tiger.
 `test_withdrawal_live.py` is the phase 5 evidence and skips without a database URL.
 
+## Seeding something to disrupt
+
+A withdrawal is only interesting if the sailing carries commitments. Phase 4 is several
+gates away, so `preseed.py` writes Buyer B and Buyer C as `COMMITTED` bookings through
+the real commitment invariants (atomic slot claim under `FOR UPDATE`, no overselling,
+real foreign keys, same-transaction events). This is spec 05 work package 5.
+
+```
+cd console && uv run python -m carrier_console.preseed_cli
+```
+
+Buyer A is deliberately refused: PRD 16.1 requires Buyer A to be booked live through
+ASI:One so the judge watches that exact booking get disrupted and recovered.
+
+Preseeded offers carry `PRESEED_NOT_A_VERIFIED_CARRIER_SIGNATURE`. Nothing produced by
+the preseed is phase 2, 3 or 4 evidence, and it should never be described as such.
+
 ## Design decisions worth a second opinion
 
 **Committed capacity slots are left alone.** Withdrawing a sailing sets `AVAILABLE` and
