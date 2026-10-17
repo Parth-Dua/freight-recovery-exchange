@@ -1,7 +1,7 @@
 # Progress — Autonomous Freight Recovery
 
-**Active phase:** 02 — Carrier Agents & Tiger (Phase 01 closed by user decision)  
-**Phase status:** Phase 01 CLOSED. Phase 02 — AT-02-01..05 PASS on backend evidence; AT-02-05 visible ASI:One table awaiting user confirmation.  
+**Active phase:** 03 — Booking Negotiation (not started)  
+**Phase status:** Phase 01 CLOSED. Phase 02 PASSED (AT-02-01..05; user confirmed ASI:One table 2026-10-17). Phase 03 NOT STARTED.  
 **Updated:** 2026-10-17  
 **Scope:** Part 1. Part 2 blocked until Phase 8 passes.
 
@@ -83,6 +83,12 @@
 - **AT-02-05 evidence:** ASI:One sender `agent1qwh4wz3q…cefg3w`, session 7316d2ec-…, text `@freight-recovery-exc Quote 2x20GP from Jebel Ali to Mumbai` → `request_handled` route request_quotes ok 7.9 s, **req_30692ecbd2cb** (flow_4b76e43673b5). Tiger: cargo_requests QUOTED, buyer_id = ASI:One sender; offers cove COV-302 500000, atlas ATL-101 520000, beacon BEA-201 550000 (PROPOSED); 6 agent_messages; 8 market_events. All 3 carriers resolution=almanac. Visible ASI:One table: awaiting user confirmation.
 - **Finding (Phase 3 must fix before booking):** ASI:One delivers each message twice in the same session (~2.5–7 s apart): req_50ce…/req_6d43…, req_30692ecbd2cb/req_214a3d10faaf → duplicate quote rounds. The SDK passes no ACP msg_id to the graph (metadata: sender, target, session only). Need idempotency keyed on (session, normalized text, time window) or a pre-graph dedupe, before any state-changing action (holds/bookings/payments).
 - Next action: user confirms ASI:One shows the 3-offer table ending `Ref: req_30692ecbd2cb` (or req_214a3d10faaf) → mark Phase 2 PASSED; then read `docs/specs/03-booking-negotiation.md`.
+
+### 2026-10-17 15:00 — Phase 02 PASSED
+- User confirmed the ASI:One reply showed the live 3-carrier offer table (req_30692ecbd2cb). Gate met: ASI:One → Exchange → 3 separately addressed carrier agents (uAgents sync, signed) → distinct offers persisted in Tiger.
+- Phase 3 may assume: carriers run via `./scripts/run_carriers.sh`; `CarrierClient.request_offers`; offers/agent_messages/market_events schema; Ref == Tiger request_id; known risks: ASI:One duplicate delivery (needs idempotency), uAgents sync queries keyed by sender (concurrent rounds), SDK adapter returns only text/resources (Interactive Cards unverified — see Phase 3 WP5).
+- User question (open, no decision): use an Interactive Card to collect cargo details instead of free text. Specs place cards in Phase 3 WP5 (offer selection cards mapped to real offer IDs) and Phase 7 (recovery outcome cards).
+- Next action: read `docs/specs/03-booking-negotiation.md`; first verify what ASI:One card types exist (input form vs selection) and whether the agentverse-sdk LangGraph adapter can emit them.
 
 ## Checkpoint template (append concise updates)
 ### YYYY-MM-DD HH:MM — Phase NN
