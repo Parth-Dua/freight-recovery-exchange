@@ -1,7 +1,7 @@
 # Progress — Autonomous Freight Recovery
 
 **Active phase:** 02 — Carrier Agents & Tiger (Phase 01 closed by user decision)  
-**Phase status:** Phase 01 CLOSED. Phase 02 IN PROGRESS — AT-02-01..04 PASS (live); AT-02-05 local HTTP pass, **ASI:One run NEEDS HUMAN VERIFICATION**.  
+**Phase status:** Phase 01 CLOSED. Phase 02 — AT-02-01..05 PASS on backend evidence; AT-02-05 visible ASI:One table awaiting user confirmation.  
 **Updated:** 2026-10-17  
 **Scope:** Part 1. Part 2 blocked until Phase 8 passes.
 
@@ -77,6 +77,12 @@
 - Findings/decisions: macOS keeps re-setting `hidden` flag on `.venv/**/*.pth` (repo in iCloud-synced ~/Documents; iCloud " 2" duplicate seen) and Python skips hidden .pth → freight-contracts installed non-editable; CLIs in `scripts/` add `src` to sys.path. Tiger password via `PGPASSWORD` (URL has no password). Carriers bind 0.0.0.0 (uAgents default) but only serve signed requests from EXCHANGE_AGENT_ADDRESS. uAgents sync queries keyed by sender → concurrent rounds to same carrier may collide (Phase 3 risk).
 - Repo: private GitHub https://github.com/Parth-Dua/freight-recovery-exchange (own git repo in project dir; parent home-dir repo untouched). Secret scan of staged files: none of AGENT_URI key / carrier seeds / PGPASSWORD present.
 - Next action: user sends in ASI:One `@freight-recovery-exc Quote 2x20GP from Jebel Ali to Mumbai, arrive by Oct 23, budget $5,600, don't split` → match Ref ↔ `request_handled` + Tiger row → mark AT-02-05 and Phase 2 gate. Then Phase 3 spec.
+
+### 2026-10-17 14:55 — Phase 02 (AT-02-05 via ASI:One)
+- Bug found + fixed: ASI:One forwards the `@freight-recovery-exc` mention in the text; "recovery" in our handle routed quote requests to recovery (req_50ce5cf95abc, req_6d4369794841). Fix: `responses.strip_mentions` before routing/parsing; regression tests added (60 passed). Exchange restarted; commit "Ignore @handle mentions…" pushed.
+- **AT-02-05 evidence:** ASI:One sender `agent1qwh4wz3q…cefg3w`, session 7316d2ec-…, text `@freight-recovery-exc Quote 2x20GP from Jebel Ali to Mumbai` → `request_handled` route request_quotes ok 7.9 s, **req_30692ecbd2cb** (flow_4b76e43673b5). Tiger: cargo_requests QUOTED, buyer_id = ASI:One sender; offers cove COV-302 500000, atlas ATL-101 520000, beacon BEA-201 550000 (PROPOSED); 6 agent_messages; 8 market_events. All 3 carriers resolution=almanac. Visible ASI:One table: awaiting user confirmation.
+- **Finding (Phase 3 must fix before booking):** ASI:One delivers each message twice in the same session (~2.5–7 s apart): req_50ce…/req_6d43…, req_30692ecbd2cb/req_214a3d10faaf → duplicate quote rounds. The SDK passes no ACP msg_id to the graph (metadata: sender, target, session only). Need idempotency keyed on (session, normalized text, time window) or a pre-graph dedupe, before any state-changing action (holds/bookings/payments).
+- Next action: user confirms ASI:One shows the 3-offer table ending `Ref: req_30692ecbd2cb` (or req_214a3d10faaf) → mark Phase 2 PASSED; then read `docs/specs/03-booking-negotiation.md`.
 
 ## Checkpoint template (append concise updates)
 ### YYYY-MM-DD HH:MM — Phase NN
