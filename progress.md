@@ -133,6 +133,12 @@
 - Blocked/waiting: Tisya's OK for additive contract messages (REQUEST_HOLD…BOOKING_REJECTED); `STRIPE_SECRET_KEY` (sk_test_) in .env.
 - Next: Stripe adapter (unit-tested with fake; live once key exists), Exchange intent repository + graph `book`/`paid` nodes.
 
+### 2026-10-17 17:00 — [Parth] Phase 04 WP3 adapter + WP6 finding (branch parth/phase4-booking)
+- `src/freight_exchange/payments.py` (stripe 14.4.1 async client): refuses non-`sk_test_` keys; Checkout with 2 lines (simulated freight + booking fee), submit_type=book, metadata/client_reference_id = intent id, idempotency key `checkout-<intent>`, expires with the 30-min hold; `classify_session` → VERIFIED_TEST only if complete+paid+exact amount/currency/intent+livemode=false. Unit tests 14 (fake client — NOT Stripe evidence). Root suite 131 passed.
+- WP6 → decision 0006: Fetch Payment Protocol can carry Stripe test checkout (official uAgents example, `payment_method="stripe"`, metadata.stripe, embedded UI, needs pk_test too) but our LangGraph SDK adapter can't send/receive payment-protocol messages → bonus NOT VERIFIED; Phase 4 uses hosted Checkout link.
+- Blocked: (1) Tisya's OK for additive contract messages (REQUEST_HOLD, HOLD_CONFIRMED, HOLD_REJECTED, RELEASE_HOLD, HOLD_RELEASED, CONFIRM_BOOKING, BOOKING_CONFIRMED, BOOKING_REJECTED); (2) `STRIPE_SECRET_KEY=sk_test_…` in .env for live Stripe evidence.
+- Next once unblocked: contracts → carrier handlers → Exchange booking_intents repo + graph `book`/`paid`/`cancel` nodes → live Stripe test card 4242 / failure card → ASI:One receipt (AT-04-03/05/06).
+
 ## Checkpoint template (append concise updates)
 ### YYYY-MM-DD HH:MM — Phase NN
 - Done:
