@@ -27,6 +27,7 @@ _CONTAINER = re.compile(
     re.IGNORECASE,
 )
 _QTY_ONLY = re.compile(_NUM + r"\s+(?:containers?|boxes|units?|cntrs?)\b", re.IGNORECASE)
+_QTY_BARE = re.compile(r"^\s*(\d{1,2})\s*(?:x|×)?\s*$")
 _MONTH = r"(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?"
 _DATE_PATTERNS = [
     re.compile(r"(\d{4})-(\d{2})-(\d{2})"),
@@ -64,6 +65,8 @@ class ParsedRequest:
             out.append("origin port")
         if self.destination is None:
             out.append("destination port")
+        if self.quantity_assumed:
+            out.append("number of containers")
         return out
 
 
@@ -153,7 +156,7 @@ def _container(text: str) -> tuple[int | None, str | None]:
         qty = int(qty_word) if qty_word.isdigit() else NUMBER_WORDS[qty_word.lower()]
         ctype = "40HC" if size == "40" and kind.startswith(("hc", "high")) else f"{size}GP"
         return qty, ctype
-    m = _QTY_ONLY.search(text)
+    m = _QTY_ONLY.search(text) or _QTY_BARE.search(text.splitlines()[-1] if text else "")
     if m:
         word = m.group(1)
         return (int(word) if word.isdigit() else NUMBER_WORDS[word.lower()]), None
@@ -169,8 +172,6 @@ def parse_request(text: str, ports: list[Port], now: datetime | None = None) -> 
     qty, ctype = _container(text)
     if qty is not None:
         parsed.quantity, parsed.quantity_assumed = qty, False
-    else:
-        parsed.notes.append("quantity not stated; assumed 1 container")
     if ctype:
         parsed.container_type = ctype
     elif not re.search(r"\b(20|40)\s*(gp|ft|foot|feet|'|hc)", text, re.I):

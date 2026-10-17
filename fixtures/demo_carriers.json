@@ -10,7 +10,7 @@
     {
       "carrier_id": "atlas", "display_name": "Atlas Lines (fictional)", "port": 8101,
       "policy": {"currency": "USD", "min_price_per_unit_minor": 230000, "target_price_per_unit_minor": 260000,
-                 "utilization_premium_pct": 10, "offer_ttl_seconds": 600, "selection": "earliest_arrival"},
+                 "utilization_premium_pct": 10, "offer_ttl_seconds": 600, "selection": "earliest_arrival", "concession_pct": 10},
       "vessels": [{"vessel_id": "atlas-meridian", "name": "Atlas Meridian"}],
       "sailings": [
         {"sailing_id": "ATL-101", "vessel_id": "atlas-meridian", "depart": {"days": 0, "hours": 12}, "arrive": {"days": 2, "hours": 8}, "slots_20gp": 4},
@@ -20,7 +20,7 @@
     {
       "carrier_id": "beacon", "display_name": "Beacon Maritime (fictional)", "port": 8102,
       "policy": {"currency": "USD", "min_price_per_unit_minor": 235000, "target_price_per_unit_minor": 275000,
-                 "utilization_premium_pct": 5, "offer_ttl_seconds": 600, "selection": "earliest_arrival"},
+                 "utilization_premium_pct": 5, "offer_ttl_seconds": 600, "selection": "earliest_arrival", "concession_pct": 4},
       "vessels": [{"vessel_id": "beacon-harbinger", "name": "Beacon Harbinger"}],
       "sailings": [
         {"sailing_id": "BEA-201", "vessel_id": "beacon-harbinger", "depart": {"days": 1, "hours": 6}, "arrive": {"days": 3, "hours": 4}, "slots_20gp": 2},
@@ -30,7 +30,7 @@
     {
       "carrier_id": "cove", "display_name": "Cove Shipping (fictional)", "port": 8103,
       "policy": {"currency": "USD", "min_price_per_unit_minor": 220000, "target_price_per_unit_minor": 250000,
-                 "utilization_premium_pct": 15, "offer_ttl_seconds": 600, "selection": "earliest_departure"},
+                 "utilization_premium_pct": 15, "offer_ttl_seconds": 600, "selection": "earliest_departure", "concession_pct": 3},
       "vessels": [{"vessel_id": "cove-tidewater", "name": "Cove Tidewater"}],
       "sailings": [
         {"sailing_id": "COV-301", "vessel_id": "cove-tidewater", "depart": {"days": 1, "hours": 18}, "arrive": {"days": 3, "hours": 18}, "slots_20gp": 1},

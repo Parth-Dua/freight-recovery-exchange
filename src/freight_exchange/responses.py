@@ -11,28 +11,38 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 
+from typing import TYPE_CHECKING
+
 from freight_exchange.carrier_client import CarrierOutcome
 from freight_exchange.repository import Corridor, Port
 from freight_exchange.request_parser import ParsedRequest
+from freight_exchange.selection import SELECT_INTENT
+
+if TYPE_CHECKING:
+    from freight_exchange.quotes import CarrierResult, QuoteRound
 
 MAX_INPUT_CHARS = 2000
 
 ROUTE_CAPABILITIES = "capabilities"
 ROUTE_CORRIDORS = "get_supported_corridors"
 ROUTE_QUOTES = "request_quotes"
+ROUTE_SELECT = "select_offer"
+ROUTE_REQUOTE = "requote"
 ROUTE_BOOKING = "booking_not_implemented"
 ROUTE_RECOVERY = "recovery_not_implemented"
 ROUTE_UNSUPPORTED = "unsupported"
 
 STATUS_LINE = (
-    "Demo market: fictional carriers and simulated inventory. Quotes are indicative — "
-    "booking, payment and recovery are not active yet."
+    "Demo market: fictional carriers and simulated inventory. Offers are indicative — "
+    "holds, booking, payment and recovery are not active yet."
 )
 EXAMPLE_PROMPT = '"Quote 2x20GP from Jebel Ali to Mumbai, arrive by Oct 23, budget $5,600, don\'t split"'
 
 # Order matters: commitments are checked before quotes so "book 2 containers"
 # is never silently treated as a booking.
 _ROUTE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    (ROUTE_REQUOTE, re.compile(r"\b(re-?quote|refresh( the)? (quotes?|offers?)|new quotes?|quote again|fresh quotes?)\b")),
+    (ROUTE_SELECT, SELECT_INTENT),
     (ROUTE_BOOKING, re.compile(r"\b(book\w*|reserv\w*|pay\w*|checkout|purchase|buy|hold|confirm\w*)\b")),
     (ROUTE_RECOVERY, re.compile(r"\b(recover\w*|re-?rout\w*|disrupt\w*|withdraw\w*|rebook\w*)\b")),
     # strong quote signals beat corridor words ("rates on the Mumbai lane")
@@ -138,16 +148,18 @@ def invalid_request_reply(reason: str) -> str:
     return f"I couldn't send that to carriers: {reason}. Nothing was requested.\nExample: {EXAMPLE_PROMPT}"
 
 
-def _request_summary(parsed: ParsedRequest) -> str:
-    parts = [f"{parsed.quantity}× {parsed.container_type}",
-             f"{port_label(parsed.origin)} → {port_label(parsed.destination)}"]
-    if parsed.earliest_departure:
-        parts.append(f"depart after {parsed.earliest_departure:%b %d}")
-    if parsed.latest_arrival:
-        parts.append(f"arrive by {parsed.latest_arrival:%b %d}")
-    if parsed.max_total_price_minor:
-        parts.append(f"budget {money(parsed.max_total_price_minor)}")
-    parts.append("split allowed" if parsed.allow_split else "no split")
+def _request_summary(cargo_or_parsed) -> str:
+    c = cargo_or_parsed
+    origin = port_label(c.origin) if isinstance(c, ParsedRequest) else c.origin_port
+    dest = port_label(c.destination) if isinstance(c, ParsedRequest) else c.destination_port
+    parts = [f"{c.quantity}× {c.container_type}", f"{origin} → {dest}"]
+    if c.earliest_departure:
+        parts.append(f"depart after {c.earliest_departure:%b %d}")
+    if c.latest_arrival:
+        parts.append(f"arrive by {c.latest_arrival:%b %d}")
+    if c.max_total_price_minor:
+        parts.append(f"budget {money(c.max_total_price_minor)}")
+    parts.append("split allowed" if c.allow_split else "no split")
     return ", ".join(parts)
 
 
@@ -158,45 +170,110 @@ def _failure_text(o: CarrierOutcome) -> str:
     return f"{o.detail or 'error'} ({code})"
 
 
-def quotes_reply(parsed: ParsedRequest, outcomes: list[CarrierOutcome], request_id: str) -> str:
-    offers = sorted((o for o in outcomes if o.kind == "offer"),
-                    key=lambda o: (o.offer.total_price_minor, o.offer.arrival_at))
-    lines = [
-        f"**Live quotes from {len(outcomes)} independent carrier agents** — {_request_summary(parsed)}.",
-    ]
-    if parsed.notes:
-        lines.append("Assumed: " + "; ".join(parsed.notes) + ".")
-    lines.append("")
-    if offers:
-        lines += [
-            "| # | Carrier | Sailing | Departs → Arrives (UTC) | Qty | Total | Valid until (UTC) |",
-            "|---|---|---|---|---|---|---|",
-        ]
-        for i, o in enumerate(offers, 1):
-            f = o.offer
-            lines.append(
-                f"| {i} | {o.carrier.display_name} | {f.sailing_id} · {f.vessel_name} | "
-                f"{when(f.departure_at)} → {when(f.arrival_at)} | {f.quantity} | "
-                f"{money(f.total_price_minor, f.currency)} | {f.expires_at:%H:%M} |"
-            )
-    else:
-        lines.append("No carrier could offer capacity that meets these constraints.")
+def _negotiation_cell(r: "CarrierResult") -> str:
+    c = r.counter
+    if c is None:
+        return "—"
+    proposed = money(c.counter.proposed_total_price_minor)
+    if c.kind == "accept":
+        return f"asked {proposed} → accepted ✓"
+    if c.kind == "revise":
+        return f"asked {proposed} → met at {money(c.new_offer.total_price_minor)}"
+    if c.kind == "reject":
+        return f"asked {proposed} → declined, opening stands"
+    return f"counter failed ({c.error_code.value if c.error_code else 'error'}), opening stands"
 
-    others = [o for o in outcomes if o.kind != "offer"]
+
+def quotes_reply(summary_source, round_: "QuoteRound") -> str:
+    results, ranked = round_.results, round_.ranked
+    lines = [f"**Live offers from {len(results)} independent carrier agents** — {_request_summary(summary_source)}."]
+    notes = getattr(summary_source, "notes", None)
+    if notes:
+        lines.append("Assumed: " + "; ".join(notes) + ".")
+    lines.append("")
+    if ranked:
+        lines += [
+            "| # | Carrier | Sailing | Departs → Arrives (UTC) | Opening | Negotiation (1 counter) | Final | Valid until (UTC) |",
+            "|---|---|---|---|---|---|---|---|",
+        ]
+        for i, r in enumerate(ranked, 1):
+            f, o = r.final_offer, r.opening.offer
+            lines.append(
+                f"| {i} | {r.carrier.display_name} | {f.sailing_id} · {f.vessel_name} | "
+                f"{when(f.departure_at)} → {when(f.arrival_at)} | {money(o.total_price_minor, o.currency)} | "
+                f"{_negotiation_cell(r)} | **{money(f.total_price_minor, f.currency)}** | {f.expires_at:%H:%M} |"
+            )
+        lines += ["", "Reply **select 1** (or a carrier name, “cheapest”, “fastest”) to choose an offer."]
+    else:
+        lines.append("No carrier could offer capacity that meets these constraints (NO_FEASIBLE_OFFERS). "
+                     "Try a later deadline, a higher budget or allowing a split.")
+
+    others = [r.opening for r in results if r.final_offer is None]
     if others:
         lines.append("")
         for o in others:
             label = "Declined" if o.kind == "reject" else "No valid offer"
             lines.append(f"- {label} — {o.carrier.display_name}: {_failure_text(o)}")
 
-    verified = [o for o in outcomes if o.signature_verified]
+    replies = [r.opening for r in results] + [r.counter for r in results if r.counter is not None]
+    verified = sum(1 for x in replies if x.signature_verified)
     lines += [
         "",
-        f"✓ {len(verified)}/{len(outcomes)} replies carried a valid carrier signature, checked against the "
-        "carrier agent registry in Tiger: "
-        + ", ".join(f"{o.carrier.carrier_id} {short_address(o.carrier.agent_address)} ({o.latency_ms} ms)"
-                    for o in outcomes) + ".",
-        f"Recorded in Tiger as request {request_id}. Indicative quotes only — no capacity is held "
-        "and nothing is booked or charged.",
+        f"✓ {verified}/{len(replies)} carrier replies carried a valid signature, checked against the carrier "
+        "registry in Tiger: " + ", ".join(
+            f"{r.carrier.carrier_id} {short_address(r.carrier.agent_address)}" for r in results) + ".",
+        f"Recorded in Tiger as request {round_.request_id}. Offers are indicative — nothing is held, booked or charged.",
     ]
     return "\n".join(lines)
+
+
+def clarification_reply(parsed: ParsedRequest, corridors: list[Corridor]) -> str:
+    lanes = "; ".join(f"{port_label(c.origin)} → {port_label(c.destination)} ({'/'.join(c.container_types)})"
+                      for c in corridors) or "none"
+    known = []
+    if parsed.origin and parsed.destination:
+        known.append(f"{port_label(parsed.origin)} → {port_label(parsed.destination)}")
+    if not parsed.quantity_assumed:
+        known.append(f"{parsed.quantity}× {parsed.container_type}")
+    have = f" So far: {', '.join(known)}." if known else ""
+    return (f"To get quotes I still need the {' and '.join(parsed.missing)}.{have} Just reply with it.\n"
+            f"Corridors I serve: {lanes}. Example: {EXAMPLE_PROMPT}")
+
+
+missing_info_reply = clarification_reply  # backwards-compatible name
+
+
+def container_not_offered_reply(container_type: str, corridor: Corridor) -> str:
+    return (f"{container_type} isn't offered on {port_label(corridor.origin)} → {port_label(corridor.destination)}; "
+            f"available: {'/'.join(corridor.container_types)}. Nothing was requested. Example: {EXAMPLE_PROMPT}")
+
+
+def invalid_request_reply(reason: str) -> str:
+    return f"I couldn't send that to carriers: {reason}. Nothing was requested.\nExample: {EXAMPLE_PROMPT}"
+
+
+def selected_reply(offer: dict, request_id: str, already: bool = False) -> str:
+    head = "Already selected" if already else "Selected"
+    return (
+        f"{head}: option {offer['display_rank']} — {offer['display_name']}, sailing {offer['sailing_id']}, "
+        f"{offer['quantity']}× {offer['container_type']}, departs {when(offer['departure_at'])} → arrives "
+        f"{when(offer['arrival_at'])} UTC, **{money(offer['total_price_minor'], offer['currency'])}**, "
+        f"valid until {offer['expires_at']:%H:%M} UTC (offer {offer['offer_id']}).\n"
+        f"Saved in Tiger on request {request_id} as OFFER_SELECTED. This is **not a booking**: no capacity is held "
+        "and nothing is charged. Booking with a carrier hold and test-mode payment comes next."
+    )
+
+
+def offer_expired_reply(rank: int | None) -> str:
+    label = f"Option {rank}" if rank else "That offer"
+    return f"{label} has expired (OFFER_EXPIRED), so it can't be selected. Say **requote** for fresh offers."
+
+
+def selection_problem_reply(problem: str, offers: list[dict]) -> str:
+    opts = "; ".join(f"{o['display_rank']}: {o['display_name']} {money(o['total_price_minor'], o['currency'])}"
+                     for o in offers)
+    return f"I couldn't match that to an offer — {problem}. Current options: {opts or 'none'}."
+
+
+def no_quotes_yet_reply() -> str:
+    return f"There are no offers in this conversation to select yet. Ask for quotes first, e.g. {EXAMPLE_PROMPT}"
