@@ -94,9 +94,40 @@ def _row(status: str, committed: int = 2) -> SailingRow:
 
 def test_active_sailing_renders_a_withdraw_form() -> None:
     html = _sailing_card(_row("ACTIVE"))
-    assert 'action="/withdraw"' in html
+    assert 'action="/withdraw/review"' in html
     assert "risk_sim_0001" in html
-    assert "disrupts 2 committed booking(s)" in html
+    assert "confirm(" not in html  # no browser popup: embedded browsers block them
+
+
+def test_review_page_lists_who_will_be_disrupted() -> None:
+    from carrier_console.risk import get_risk_event
+    from carrier_console.web import _review_body
+
+    html = _review_body(_row("ACTIVE"), get_risk_event("risk_sim_0001"),
+                        [("BK-1", "buyer_b"), ("BK-2", "buyer_c")])
+    assert "Withdraw ATL-101?" in html
+    assert "<b>2</b> committed booking(s)" in html
+    assert "BK-1" in html and "buyer_c" in html
+    assert 'action="/withdraw"' in html
+    assert 'name="risk_event_id" value="risk_sim_0001"' in html
+    assert 'href="/">Cancel' in html
+
+
+def test_review_page_with_nobody_on_board() -> None:
+    from carrier_console.risk import get_risk_event
+    from carrier_console.web import _review_body
+
+    html = _review_body(_row("ACTIVE", committed=0), get_risk_event("risk_sim_0002"), [])
+    assert "nobody is disrupted" in html
+
+
+def test_banner_redirects_encode_their_message() -> None:
+    from carrier_console.web import _back
+
+    response = _back(err="CROSS_CARRIER_WITHDRAWAL: beacon does not own ATL-101")
+    location = response.headers["location"]
+    assert " " not in location
+    assert location.startswith("/?err=CROSS_CARRIER_WITHDRAWAL")
 
 
 def test_withdrawn_sailing_has_no_form() -> None:
