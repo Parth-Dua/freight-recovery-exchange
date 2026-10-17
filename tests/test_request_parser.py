@@ -44,10 +44,15 @@ def test_asi_one_style_rephrasing_and_high_cube():
 
 def test_unknown_ports_are_reported_not_guessed():
     r = p("quote shanghai to LA please")
-    assert r.origin is None and r.destination is None and r.missing == ["origin port", "destination port"]
-    assert "assumed 1 container" in r.notes[0]
+    assert r.origin is None and r.destination is None
+    assert r.missing == ["origin port", "destination port", "number of containers"]
 
 
 @pytest.mark.parametrize("text", ["2 containers by Oct 23 to Mumbai from Jebel Ali", "up to Oct 23 Mumbai Jebel Ali"])
 def test_small_numbers_are_not_budgets(text):
     assert p(text).max_total_price_minor is None
+
+
+def test_quantity_is_asked_not_invented():
+    r = p("quote Jebel Ali to Mumbai")
+    assert r.missing == ["number of containers"] and r.quantity_assumed

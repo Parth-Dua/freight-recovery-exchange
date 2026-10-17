@@ -6,21 +6,33 @@ runtime (full uagents) so schema digests and signatures match exactly.
 
 from freight_contracts.messages import (
     SCHEMA_VERSION,
+    AcceptCounter,
     AgentError,
     CargoSpec,
     CarrierReply,
+    CounterOffer,
+    CounterReply,
     ErrorCode,
     MalformedReply,
+    OfferTerms,
     ProposeOffer,
+    RejectCounter,
     RejectOffer,
     RejectReason,
     RequestOffer,
+    RevisedOffer,
     parse_carrier_reply,
 )
 from freight_contracts.signing import payload_digest, sign_model, verify_model
 
 __all__ = [
     "SCHEMA_VERSION",
+    "AcceptCounter",
+    "CounterOffer",
+    "CounterReply",
+    "OfferTerms",
+    "RejectCounter",
+    "RevisedOffer",
     "AgentError",
     "CargoSpec",
     "CarrierReply",

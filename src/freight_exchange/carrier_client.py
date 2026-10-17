@@ -18,13 +18,18 @@ from uuid import uuid4
 
 import httpx
 from freight_contracts import (
+    AcceptCounter,
     AgentError,
     CargoSpec,
+    CounterOffer,
     ErrorCode,
     MalformedReply,
+    OfferTerms,
     ProposeOffer,
+    RejectCounter,
     RejectOffer,
     RequestOffer,
+    RevisedOffer,
     parse_carrier_reply,
     verify_model,
 )
@@ -42,6 +47,24 @@ class CarrierRef:
     display_name: str
     agent_address: str
     endpoint_url: str | None
+
+
+@dataclass
+class CounterOutcome:
+    carrier: CarrierRef
+    counter: CounterOffer
+    opening: OfferTerms
+    kind: str  # accept | revise | reject | carrier_error | exchange_error
+    latency_ms: int
+    reply: AcceptCounter | RevisedOffer | RejectCounter | AgentError | None = None
+    error_code: ErrorCode | None = None
+    detail: str = ""
+    signature_verified: bool = False
+    received_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @property
+    def new_offer(self) -> AcceptCounter | RevisedOffer | None:
+        return self.reply if self.kind in ("accept", "revise") else None
 
 
 @dataclass
@@ -177,7 +200,71 @@ def validate_reply(
     return "offer", reply, None, "", True
 
 
-def offer_violation(offer: ProposeOffer, cargo: CargoSpec) -> str | None:
+def build_counter(opening: OfferTerms, request: RequestOffer, proposed: int, now: datetime, timeout_s: float) -> CounterOffer:
+    return CounterOffer(
+        message_id=f"msg_{uuid4().hex}",
+        correlation_id=request.correlation_id,
+        request_id=request.request_id,
+        negotiation_id=request.negotiation_id,
+        sent_at=now,
+        expires_at=now + timedelta(seconds=timeout_s),
+        offer_id=opening.offer_id,
+        proposed_total_price_minor=proposed,
+        currency=opening.currency,
+    )
+
+
+_SAME_TERMS = ("sailing_id", "origin_port", "destination_port", "container_type", "quantity", "currency",
+               "departure_at", "arrival_at")
+
+
+def validate_counter_reply(
+    raw: str, carrier: CarrierRef, counter: CounterOffer, opening: OfferTerms, cargo: CargoSpec, now: datetime
+) -> tuple[str, object, ErrorCode | None, str, bool]:
+    """Return (kind, reply, error_code, detail, signature_verified) for a counter reply."""
+    try:
+        reply = parse_carrier_reply(raw)
+    except MalformedReply as exc:
+        return "exchange_error", None, ErrorCode.MALFORMED_REPLY, str(exc)[:200], False
+    if not isinstance(reply, (AcceptCounter, RevisedOffer, RejectCounter, AgentError)):
+        return "exchange_error", reply, ErrorCode.MALFORMED_REPLY, f"unexpected {reply.message_type} to a counter", False
+    if reply.carrier_id != carrier.carrier_id or reply.carrier_address != carrier.agent_address:
+        return "exchange_error", reply, ErrorCode.UNKNOWN_CARRIER, "reply identity does not match registered carrier", False
+    if not verify_model(reply, carrier.agent_address):
+        return "exchange_error", reply, ErrorCode.INVALID_SIGNATURE, "carrier signature did not verify", False
+    if (reply.in_reply_to, reply.request_id, reply.negotiation_id, reply.correlation_id) != (
+        counter.message_id, counter.request_id, counter.negotiation_id, counter.correlation_id
+    ):
+        return "exchange_error", reply, ErrorCode.CORRELATION_MISMATCH, "reply does not answer this counter", True
+    if isinstance(reply, AgentError):
+        return "carrier_error", reply, reply.error_code, reply.detail, True
+    if isinstance(reply, RejectCounter):
+        if reply.offer_id != opening.offer_id:
+            return "exchange_error", reply, ErrorCode.CORRELATION_MISMATCH, "rejection names a different offer", True
+        return "reject", reply, None, reply.reason, True
+
+    # ACCEPT_COUNTER / REVISED_OFFER: a fresh offer on exactly the same terms, cheaper or equal
+    if reply.supersedes_offer_id != opening.offer_id:
+        return "exchange_error", reply, ErrorCode.CORRELATION_MISMATCH, "new offer supersedes a different offer", True
+    changed = [f for f in _SAME_TERMS if getattr(reply, f) != getattr(opening, f)]
+    if changed:
+        return "exchange_error", reply, ErrorCode.OFFER_CONSTRAINT_VIOLATION, f"terms changed: {', '.join(changed)}", True
+    if reply.total_price_minor > opening.total_price_minor:
+        return "exchange_error", reply, ErrorCode.OFFER_CONSTRAINT_VIOLATION, "negotiated price is above the opening offer", True
+    if isinstance(reply, AcceptCounter) and reply.total_price_minor != min(counter.proposed_total_price_minor,
+                                                                         opening.total_price_minor):
+        return "exchange_error", reply, ErrorCode.OFFER_CONSTRAINT_VIOLATION, "accepted price differs from counter", True
+    if isinstance(reply, RevisedOffer) and reply.total_price_minor < counter.proposed_total_price_minor:
+        return "exchange_error", reply, ErrorCode.OFFER_CONSTRAINT_VIOLATION, "revised price below counter (should accept)", True
+    if reply.expires_at <= now:
+        return "exchange_error", reply, ErrorCode.STALE_OFFER, "negotiated offer already expired", True
+    violation = offer_violation(reply, cargo)
+    if violation:
+        return "exchange_error", reply, ErrorCode.OFFER_CONSTRAINT_VIOLATION, violation, True
+    return ("accept" if isinstance(reply, AcceptCounter) else "revise"), reply, None, "", True
+
+
+def offer_violation(offer: OfferTerms, cargo: CargoSpec) -> str | None:
     if (offer.origin_port, offer.destination_port) != (cargo.origin_port, cargo.destination_port):
         return "offer is for a different corridor"
     if offer.container_type != cargo.container_type:
@@ -240,6 +327,38 @@ class CarrierClient:
         kind, reply, code, detail, verified = validate_reply(raw, carrier, request, self.clock())
         return CarrierOutcome(carrier, request, kind, elapsed(), resolution, reply=reply,
                               error_code=code, detail=detail, signature_verified=verified)
+
+    async def counter_one(
+        self,
+        carrier: CarrierRef,
+        opening: OfferTerms,
+        request: RequestOffer,
+        proposed: int,
+        on_sent: Callable[[CarrierRef, CounterOffer], Awaitable[None]] | None = None,
+    ) -> CounterOutcome:
+        counter = build_counter(opening, request, proposed, self.clock(), self.timeout_s)
+        if on_sent:
+            await on_sent(carrier, counter)
+        started = time.perf_counter()
+
+        def outcome(kind, **kw) -> CounterOutcome:
+            return CounterOutcome(carrier, counter, opening, kind, round((time.perf_counter() - started) * 1000), **kw)
+
+        try:
+            raw, _ = await asyncio.wait_for(
+                self.transport.request(carrier, counter, self.identity, self.timeout_s),
+                self.timeout_s + ALMANAC_LOOKUP_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError:
+            return outcome("exchange_error", error_code=ErrorCode.CARRIER_TIMEOUT,
+                           detail=f"no reply within {self.timeout_s:.0f}s")
+        except TransportError as exc:
+            return outcome("exchange_error", error_code=exc.code, detail=exc.detail)
+        except Exception as exc:
+            return outcome("exchange_error", error_code=ErrorCode.CARRIER_UNREACHABLE, detail=type(exc).__name__)
+        kind, reply, code, detail, verified = validate_counter_reply(
+            raw, carrier, counter, opening, request.cargo, self.clock())
+        return outcome(kind, reply=reply, error_code=code, detail=detail, signature_verified=verified)
 
     async def request_offers(
         self,

@@ -1,7 +1,7 @@
 # Progress — Autonomous Freight Recovery
 
-**Active phase:** 03 — Booking Negotiation (not started)  
-**Phase status:** Phase 01 CLOSED. Phase 02 PASSED (AT-02-01..05; user confirmed ASI:One table 2026-10-17). Phase 03 NOT STARTED.  
+**Active phase:** 03 — Booking Negotiation (implemented; live backend evidence; ASI:One run pending)  
+**Phase status:** Phase 01 CLOSED. Phase 02 PASSED. Phase 03: AT-03-01/03/04(partial)/05/06 PASS live; AT-03-02 backend PASS — ASI:One select NEEDS HUMAN VERIFICATION; AT-03-04 expired-selection live check pending (offers live 10 min).  
 **Updated:** 2026-10-17  
 **Scope:** Part 1. Part 2 blocked until Phase 8 passes.
 
@@ -96,6 +96,15 @@
 - Adapter check: agentverse-sdk 0.2.1 `extract_ai_content` emits only TextContent/ResourceContent → cards dropped as-is. Offline proof: patching module-level `agentverse_sdk.langgraph.content._convert_content_block` to map a `{"type":"card","metadata":…}` block → `MetadataContent` yields wire content `[text, metadata]`; a 7-field cargo form (972 B) passes the official validator and survives ChatMessage round-trip. Private-function patch → needs a version-pinned test.
 - Inbound caveat: SDK passes only `msg.text()` to the graph; card responses sent purely as MetadataContent would arrive empty. Docs say ASI:One returns selections as text (JSON or prose) → expected OK, must verify live.
 - NOT verified: that ASI:One renders a card coming from an external LangGraph agent (needs a live test). No decision taken on cards vs uAgent gateway.
+
+### 2026-10-17 15:30 — Phase 03 implemented (decision 0004)
+- Done: migration `002_negotiation_selection.sql` (cargo_requests.session_id + OFFER_SELECTED status; offers.supersedes_offer_id/display_rank + SELECTED status; offer_selections; carrier-owned carrier_offer_log with counters_used ≤ 1; chat_turns). Contracts: COUNTER_OFFER, ACCEPT_COUNTER, REVISED_OFFER, REJECT_COUNTER (+ reason codes). Carrier: offer log, `counter_precheck`, atomic `claim_counter`, `decide_counter` + `enforce_floor`; fixture concessions Atlas 10 / Beacon 4 / Cove 3 (policies v2). Exchange: `negotiation.counter_target`, `CarrierClient.counter_one` + `validate_counter_reply`, QuoteService negotiates in parallel and ranks finals (price, arrival, offer_id) → display_rank; `selection.resolve_choice`; graph now start(dedupe+route) → quote|requote|select|info → finish with pending clarification in thread state; quantity no longer assumed; unserved lane / container type clarified before carrier calls.
+- Tests: `uv run pytest -q` **107 passed**; `carriers: uv run pytest -q` **54 passed** (floor never breached across policies × counter values, one-counter precheck, reply validation ×9, selection ×12, graph flows: clarification follow-up, select, expired select, requote, duplicate delivery).
+- Live (`scripts/negotiation_smoke.py`, real carriers + Tiger): **req_ba06ddf3e8a8** round 10.9 s, no batching (AT-03-01): Atlas $5,200 → asked $4,940 → ACCEPT_COUNTER $4,940; Beacon $5,500 → REVISED_OFFER $5,280; Cove REJECT INSUFFICIENT_CAPACITY; 5/5 signatures verified. **AT-03-03**: 2nd counter on opening and counter on negotiated offers → REJECT_COUNTER COUNTER_LIMIT_REACHED (atlas, beacon); $1,000 counter → BELOW_POLICY (atlas, beacon); carrier_offer_log counters_used=1 on openings. Select → SELECTED, repeat → ALREADY_SELECTED; request OFFER_SELECTED; offers: openings SUPERSEDED, atlas round 2 SELECTED rank 1; 13 market_events incl. COUNTER_OFFER_SENT/COUNTER_ACCEPTED/OFFER_REVISED/OFFER_SELECTED.
+- **AT-03-06**: Beacon process killed → req_621b1274b261: Atlas $5,200→$4,750 accepted, Cove $5,000→$4,850 revised, Beacon CARRIER_UNREACHABLE (typed); Beacon restarted.
+- **Server HTTP flow** (SDK-shaped /threads/{id}/runs/wait, thread metadata): "Quote from Jebel Ali to Mumbai, arrive by Oct 23, budget $5,600" → asked for number of containers (AT-03-05) → "2" → negotiated table req_a68a77e95eec → "select 1" → OFFER_SELECTED (not a booking) req_bccba6c49103 → duplicate "select 1" → identical reply, same Ref (dedupe).
+- Risks: round latency ~8–11 s (Tiger round-trips from laptop); dedupe window 120 s means an intentional identical repeat within 2 min returns the cached reply; ASI:One planner may paraphrase "select 1" (rank/carrier/cheapest parsing covers common forms).
+- Next action: user runs ASI:One steps in README / chat (quote → select 1 → wait >10 min → select 2 expects OFFER_EXPIRED → requote) → record AT-03-02/04 → mark Phase 3 PASSED → Phase 4 spec.
 
 ## Checkpoint template (append concise updates)
 ### YYYY-MM-DD HH:MM — Phase NN

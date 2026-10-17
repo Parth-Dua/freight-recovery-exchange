@@ -4,7 +4,8 @@ import pytest
 from freight_contracts import ErrorCode, ProposeOffer, RejectOffer, RejectReason
 
 from freight_exchange import responses as r
-from freight_exchange.carrier_client import CarrierOutcome, CarrierRef
+from freight_exchange.carrier_client import CarrierOutcome, CarrierRef, CounterOutcome
+from freight_exchange.quotes import CarrierResult, QuoteRound, rank_results
 from freight_exchange.repository import Corridor, Port
 from freight_exchange.request_parser import ParsedRequest
 
@@ -66,18 +67,34 @@ def _outcome(kind, carrier_id="atlas", **kw):
                           error_code=ErrorCode.CARRIER_TIMEOUT, detail="no reply within 8s")
 
 
-def test_quotes_reply_lists_offers_cheapest_first_with_declines_and_errors():
+def test_quotes_reply_shows_opening_negotiation_and_final_ranked():
+    from freight_contracts import AcceptCounter, CounterOffer
     parsed = ParsedRequest(origin=AEJEA, destination=INBOM, quantity=2, quantity_assumed=False,
                            latest_arrival=NOW + timedelta(days=4), max_total_price_minor=560000)
-    outcomes = [_outcome("offer", "atlas", price=540000), _outcome("offer", "beacon", price=510000),
-                _outcome("reject", "cove"), _outcome("error", "delta")]
-    text = r.quotes_reply(parsed, outcomes, "req_1")
-    assert text.index("Beacon") < text.index("| 2 | Atlas")
-    assert "$5,100" in text and "$5,400" in text
+    atlas, beacon = _outcome("offer", "atlas", price=540000), _outcome("offer", "beacon", price=510000)
+    counter = CounterOffer(message_id="m3", correlation_id="c", request_id="req_1", negotiation_id="n", sent_at=NOW,
+                           offer_id="o", proposed_total_price_minor=484000, expires_at=NOW + timedelta(seconds=30))
+    accepted = AcceptCounter(**{**atlas.reply.dict(exclude={"message_type"}), "offer_id": "o2",
+                                "total_price_minor": 484000, "supersedes_offer_id": "o", "round": 2})
+    results = [CarrierResult(atlas, CounterOutcome(atlas.carrier, counter, atlas.reply, "accept", 90, reply=accepted,
+                                                   signature_verified=True)),
+               CarrierResult(beacon), CarrierResult(_outcome("reject", "cove")), CarrierResult(_outcome("error", "delta"))]
+    text = r.quotes_reply(parsed, QuoteRound("req_1", "c", None, results, rank_results(results)))
+    assert text.index("| 1 | Atlas") < text.index("| 2 | Beacon")          # $4,840 final beats $5,100
+    assert "asked $4,840 → accepted ✓" in text and "**$4,840**" in text and "$5,400" in text
     assert "Declined — Cove: not enough capacity" in text
     assert "No valid offer — Delta: no reply within 8s (CARRIER_TIMEOUT)" in text
-    assert "3/4 replies carried a valid carrier signature" in text
-    assert "request req_1" in text and "nothing is booked" in text
+    assert "4/5 carrier replies carried a valid signature" in text
+    assert "select 1" in text and "nothing is held, booked or charged" in text
+
+
+@pytest.mark.parametrize(("message", "route"), [
+    ("select 2", r.ROUTE_SELECT), ("go with Atlas", r.ROUTE_SELECT), ("I'll take the cheapest one", r.ROUTE_SELECT),
+    ("book option 1", r.ROUTE_SELECT), ("2", r.ROUTE_SELECT), ("requote", r.ROUTE_REQUOTE),
+    ("refresh the offers", r.ROUTE_REQUOTE), ("Can you book two containers tomorrow?", r.ROUTE_BOOKING),
+])
+def test_phase3_routes(message, route):
+    assert r.classify(message) == route
 
 
 def test_missing_ports_reply_lists_corridors():
