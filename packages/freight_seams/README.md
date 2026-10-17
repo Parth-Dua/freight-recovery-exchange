@@ -16,6 +16,7 @@ side codes against the signature today and swaps in the real thing when it lands
 | `BookingSeam` | **Parth** | phase 3 + 4 | `FakeBookingSeam`, plus real `COMMITTED` rows from `console/carrier_console/preseed.py` |
 | `DisruptionSeam` | **Tisya** | phase 5 (`console/`) | `FakeDisruptionSeam`, returning the spec 06 WP5 fixture |
 | `RecoverySeam` | **Parth** | phase 6 + 7 | `FakeRecoverySeam`, which returns a PARTIAL outcome on purpose |
+| `CardSeam` | **Tisya** | phase 3 WP5 + phase 7 WP5 | `FakeCardSeam`, text-only, which is also the agreed fallback |
 
 Read `seams.py` for the signatures. They are short on purpose: two methods each, nothing
 speculative. A seam that needs a third method gets a new Protocol, never a new method on
@@ -38,6 +39,20 @@ displaced = await seam.disrupted_bookings("ATL-101")
 
 **Tisya can build the console and the ASI:One disruption reply before phase 4 exists**,
 against `FakeBookingSeam` and `FakeRecoverySeam`.
+
+## The one contingency
+
+`progress.md` records that card rendering from an external LangGraph agent is **not yet
+verified**, and that agentverse-sdk 0.2.1's `extract_ai_content` drops `MetadataContent`.
+
+So `CardSeam` is agreed with its fallback already decided: if the live spike fails, every
+method keeps its name and signature and returns a text-only `CardSpec` with the full
+answer in `narration`. Call sites in the graph do not change either way. `FakeCardSeam`
+is exactly that fallback, so it is already tested.
+
+`CardSpec` crosses the seam instead of a `MetadataContent` so this package stays
+dependency-free; the adapter on the ASI:One side wraps it with
+`uagents_core...chat.cards.create_card_content`.
 
 ## Rules
 

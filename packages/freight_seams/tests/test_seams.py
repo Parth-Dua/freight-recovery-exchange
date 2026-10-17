@@ -93,3 +93,48 @@ async def test_booking_fake_round_trips_a_commitment() -> None:
 
     seam.mark_disrupted(booking_id, NOW)
     assert (await seam.bookings_for_buyer("buyer_a"))[0].is_disrupted
+
+
+def test_fake_card_seam_satisfies_the_protocol() -> None:
+    from freight_seams import CardSeam, FakeCardSeam
+
+    assert isinstance(FakeCardSeam(), CardSeam)
+
+
+def test_card_spec_rejects_an_unknown_kind() -> None:
+    from freight_seams import CardSpec
+
+    with pytest.raises(ValueError, match="unknown card_kind"):
+        CardSpec("bogus", {}, "narration")
+
+
+def test_card_spec_requires_narration() -> None:
+    """Narration is the fallback when ASI:One cannot render the card."""
+    from freight_seams import CardSpec
+
+    with pytest.raises(ValueError, match="narration is required"):
+        CardSpec("form", {"fields": []}, "   ")
+
+
+def test_text_only_fallback_still_answers_the_question() -> None:
+    """If the card spike fails, every method keeps working and returns real prose."""
+    from freight_seams import FakeCardSeam, RecoveryOutcome
+
+    seam = FakeCardSeam()
+    outcome = RecoveryOutcome(recovery_run_id="rec_1", status="PARTIAL",
+                              unrecovered_booking_ids=("BK-1002",))
+    for spec in (
+        seam.build_cargo_form([]),
+        seam.build_offer_selection([{"offer_id": "OFR-1"}]),
+        seam.build_approval_review(outcome),
+        seam.build_recovery_summary(outcome),
+    ):
+        assert spec.narration.strip()
+
+
+def test_card_response_parses_both_shapes() -> None:
+    from freight_seams import FakeCardSeam
+
+    seam = FakeCardSeam()
+    assert seam.parse_card_response("") is None
+    assert seam.parse_card_response('{"action":"select","rank":1}').action == "submit"

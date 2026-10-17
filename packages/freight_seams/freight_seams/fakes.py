@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from itertools import count
 
+from freight_seams.cards import CardAction, CardSpec
 from freight_seams.types import (
     BookingStatusView,
     DisruptedBooking,
@@ -176,3 +177,30 @@ class FakeRecoverySeam:
 
     async def outcome(self, recovery_run_id: str) -> RecoveryOutcome | None:
         return self._runs.get(recovery_run_id)
+
+
+class FakeCardSeam:
+    """Text-only stand-in, which is also the agreed fallback if the spike fails."""
+
+    def build_cargo_form(self, sailings: list[dict]) -> CardSpec:
+        return CardSpec("custom", {"sailings": len(sailings)},
+                        "Tell me origin, destination, container count and latest arrival.")
+
+    def build_offer_selection(self, offers: list[dict]) -> CardSpec:
+        return CardSpec("carousel", {"items": offers},
+                        f"{len(offers)} offer(s) meet your constraints. Reply 'select 1'.")
+
+    def build_approval_review(self, proposal: RecoveryOutcome) -> CardSpec:
+        return CardSpec("review", {"run": proposal.recovery_run_id},
+                        "This recovery exceeds your approved limits. Approve or decline.")
+
+    def build_recovery_summary(self, outcome: RecoveryOutcome) -> CardSpec:
+        return CardSpec("detail", {"run": outcome.recovery_run_id},
+                        f"{len(outcome.assignments)} recovered, "
+                        f"{len(outcome.unrecovered_booking_ids)} still unrecovered.")
+
+    def parse_card_response(self, text: str) -> CardAction | None:
+        cleaned = text.strip()
+        if not cleaned:
+            return None
+        return CardAction(action="submit", values={"text": cleaned}, raw_text=cleaned)
