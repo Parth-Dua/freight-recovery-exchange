@@ -96,3 +96,61 @@ class RecoveryOutcome:
     @property
     def fully_recovered(self) -> bool:
         return self.status == "COMPLETED" and not self.unrecovered_booking_ids
+
+
+@dataclass(frozen=True)
+class RecoveryOffer:
+    """One carrier's replacement capacity, after Parth's message-level validation.
+
+    Mirrors RECOVERY_OFFER in docs/specs/06-joint-recovery-allocation.md section 5.
+    `capacity_units` is what the carrier *claims*; AllocationSeam checks it against
+    Tiger before trusting it. `total_price_minor` covers all `capacity_units`.
+    """
+
+    offer_id: str
+    carrier_id: str
+    sailing_id: str
+    capacity_units: int
+    total_price_minor: int
+    currency: str
+    arrival_at: datetime
+    expires_at: datetime
+    eligible_booking_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.capacity_units < 1:
+            raise ValueError(f"{self.offer_id}: capacity_units must be >= 1")
+        if self.total_price_minor <= 0:
+            raise ValueError(f"{self.offer_id}: price must be a positive minor-unit integer")
+        if self.arrival_at.tzinfo is None or self.expires_at.tzinfo is None:
+            raise ValueError(f"{self.offer_id}: datetimes must be timezone-aware")
+
+    @property
+    def unit_price_minor(self) -> int:
+        return self.total_price_minor // self.capacity_units
+
+
+@dataclass(frozen=True)
+class RecoveryProposal:
+    """The allocation decision. A proposal, never a booking.
+
+    Mirrors RecoveryProposal in spec 06 section 5, plus what the buyer-facing side
+    needs: which bookings need approval, a plain-language reason per booking, and the
+    capacity each offer was trusted for after its claim was checked.
+    """
+
+    recovery_run_id: str
+    assignments: tuple[RecoveryAssignment, ...] = ()
+    unrecovered_booking_ids: tuple[str, ...] = ()
+    needs_approval_booking_ids: tuple[str, ...] = ()
+    explanations: dict[str, str] = field(default_factory=dict)
+    verified_capacity: dict[str, int] = field(default_factory=dict)
+    input_version: str = ""
+
+    @property
+    def recovered_count(self) -> int:
+        return len({a.booking_id for a in self.assignments})
+
+    @property
+    def total_cost_minor(self) -> int:
+        return sum(a.quoted_price_minor for a in self.assignments)

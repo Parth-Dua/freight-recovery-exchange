@@ -138,3 +138,76 @@ def test_card_response_parses_both_shapes() -> None:
     seam = FakeCardSeam()
     assert seam.parse_card_response("") is None
     assert seam.parse_card_response('{"action":"select","rank":1}').action == "submit"
+
+
+def test_new_fakes_satisfy_their_protocols() -> None:
+    from freight_seams import AllocationSeam, ApprovalSeam, FakeAllocationSeam, FakeApprovalSeam
+
+    assert isinstance(FakeAllocationSeam(), AllocationSeam)
+    assert isinstance(FakeApprovalSeam(), ApprovalSeam)
+
+
+async def test_fake_allocation_matches_spec_06_baseline() -> None:
+    """AT-06-01 shape: A (2, no split) to Beacon, B (1) to Cove. Fake, so unit test only."""
+    from freight_seams import FakeAllocationSeam, demo_recovery_offers
+
+    disruption = FakeDisruptionSeam()
+    await disruption.withdraw(
+        sailing_id="ATL-101", carrier_id="atlas", risk_event_id="risk_sim_0001", actor_id="op"
+    )
+    proposal = await FakeAllocationSeam().allocate(
+        recovery_run_id="rec_1",
+        stranded=await disruption.disrupted_bookings("ATL-101"),
+        offers=demo_recovery_offers(),
+    )
+    placed = {a.booking_id: a.sailing_id for a in proposal.assignments}
+    assert placed == {"BK-1001": "BEA-201", "BK-1002": "COV-301"}
+    assert proposal.unrecovered_booking_ids == ()
+    assert proposal.recovered_count == 2
+
+
+async def test_fake_allocation_reports_an_honest_partial() -> None:
+    """AT-06-02 shape: remove Cove and Buyer B must be reported unrecovered."""
+    from freight_seams import FakeAllocationSeam, demo_recovery_offers
+
+    beacon_only = [o for o in demo_recovery_offers() if o.carrier_id == "beacon"]
+    proposal = await FakeAllocationSeam().allocate(
+        recovery_run_id="rec_2", stranded=demo_displaced_bookings(), offers=beacon_only
+    )
+    assert proposal.unrecovered_booking_ids == ("BK-1002",)
+    assert "BK-1002" in proposal.explanations
+
+
+async def test_over_limit_price_needs_approval() -> None:
+    from dataclasses import replace
+
+    from freight_seams import FakeAllocationSeam, demo_recovery_offers
+
+    pricey = [replace(o, total_price_minor=o.total_price_minor * 2) for o in demo_recovery_offers()]
+    proposal = await FakeAllocationSeam().allocate(
+        recovery_run_id="rec_3", stranded=demo_displaced_bookings(), offers=pricey
+    )
+    assert set(proposal.needs_approval_booking_ids) == {"BK-1001", "BK-1002"}
+
+
+async def test_fake_approval_returns_the_configured_decision() -> None:
+    from freight_seams import FakeApprovalSeam, RecoveryProposal
+
+    seam = FakeApprovalSeam(decision="DECLINED")
+    approval_id = await seam.request_approval(
+        proposal=RecoveryProposal(recovery_run_id="rec_4"), booking_id="BK-1001", buyer_id="buyer_a"
+    )
+    assert await seam.approval_status(approval_id) == "DECLINED"
+    assert await seam.approval_status("apr_unknown") == "EXPIRED"
+
+
+def test_recovery_offer_rejects_bad_input() -> None:
+    from dataclasses import replace
+
+    from freight_seams import demo_recovery_offers
+
+    offer = demo_recovery_offers()[0]
+    with pytest.raises(ValueError, match="capacity_units"):
+        replace(offer, capacity_units=0)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        replace(offer, arrival_at=datetime(2026, 10, 22, 20, 0))
