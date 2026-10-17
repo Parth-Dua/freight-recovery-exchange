@@ -8,28 +8,30 @@ maritime disruption.
 from uagents_core.registration import AgentProfile
 
 DESCRIPTION = (
-    "Demo ocean-freight coordination agent (Phase 1: connectivity only). Shows a sample "
-    "Shanghai→Los Angeles corridor; booking, payments and recovery are not active yet."
+    "Demo ocean-freight exchange: asks independent carrier agents for signed quotes in parallel and "
+    "records them in Tiger. Fictional carriers, Jebel Ali→Mumbai. Booking/payment not active yet."
 )
 
 README = """# Freight Recovery Exchange (Demo)
-Agent-native ocean-freight coordination, designed to help cargo owners negotiate bookings and recover shipments after disruptions.
+Agent-native ocean-freight exchange, designed to help cargo owners negotiate bookings and recover shipments after disruptions.
 
-## Current demo capabilities
-- Explain the product workflow.
-- Return the Phase 1 sample corridor: Shanghai (CNSHA) to Los Angeles (USLAX).
-- Confirm connectivity between ASI:One, Agentverse, and our live LangGraph backend.
+## What works now
+- **Live quotes:** I send your request to independent carrier agents (Atlas, Beacon, Cove) in parallel. Each carrier prices from its own private policy and inventory and signs its offer; I verify every signature before showing it.
+- **Auditable:** every request, offer, decline and error is recorded in Tiger (TimescaleDB) with one correlation ID; the `Ref` at the end of each reply is the request ID.
+- **Corridor:** Jebel Ali (AEJEA) → Mumbai (INBOM), 20GP containers.
 
-**Not yet active:** live quotations, bookings, payments, or recovery.
+**Demo market:** carriers, sailings and prices are fictional simulations. Quotes are indicative — nothing is held, booked or charged.
+**Not yet active:** negotiation, booking, payment, disruption recovery.
 
 ## Example prompts
-- "What can your freight agent do?"
-- "What corridors do you currently support?"
+- "Quote 2x20GP from Jebel Ali to Mumbai, arrive by Oct 23, budget $5,600, don't split"
+- "What corridors do you support?"
+- "What can you do?"
 """
 
 STARTER_PROMPTS = [
-    "What can your freight agent do?",
-    "What corridors do you currently support?",
+    "Quote 2x20GP from Jebel Ali to Mumbai, arrive by Oct 23, budget $5,600, don't split",
+    "What corridors do you support?",
 ]
 
 
