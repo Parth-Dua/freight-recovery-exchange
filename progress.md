@@ -125,6 +125,14 @@
 - Phase 4 may assume: offer_selections + OFFER_SELECTED request state; buyer_id = agentverse_sender (per account); session-bound actions; selected offers expire (10 min) → Phase 4 must re-validate expiry before requesting a hold; TigerBookingSeam.commit_booking is the Phase 4 entry point (seam signature fixed).
 - Next: read `docs/specs/04-booking-and-stripe-payments.md`; Stripe test key (`sk_test_…`) will be needed from the user.
 
+### 2026-10-17 16:40 — [Parth] Phase 04 WP1–2: carrier holds + confirmation (branch parth/phase4-booking, stacked on PR #5)
+- Decision 0005 (user): Stripe TEST checkout with two lines — simulated freight + $25 booking fee; sk_test_ only + livemode=false enforced; no settlement/refunds; carrier `payment_terms` shown on receipt; hold TTL 30 min = Stripe minimum Checkout expiry; server-side Session.retrieve verification (no webhook, mailbox mode).
+- Migration `004_holds_payments_bookings.sql` applied to Parth's Tiger: holds (+request/sailing/container/quantity/released_at), bookings (+hold/intent/payment ref/claim_code_hash/payment_terms/confirmed_at, one booking per hold), payment_records (spec 04 statuses + intent/livemode/freight/fee/checkout_url), new `booking_intents` (one live intent per request).
+- `carriers/carrier_agent/holds.py`: `request_hold` (expire stale → offer current/unexpired/not superseded/qty → sailing ACTIVE → FOR UPDATE SKIP LOCKED + conditional UPDATE → hold + hold_slots + HOLD_CREATED event), `release_hold`, `confirm_booking` (hold ACTIVE+unexpired, sailing ACTIVE → booking COMMITTED + booking_slots + slots COMMITTED + BOOKING_COMMITTED event), idempotency via holds.idempotency_key / bookings.confirmation_key.
+- **Live Tiger tests** `carriers/tests/test_holds_live.py` (isolated TST- sailings, cleaned up): **7 passed** — AT-04-01 (2 concurrent holds, 1 slot → 1 wins; 5 holds, 2 slots → 2), AT-04-02 (hold + confirm replays return same ids), AT-04-04 inventory side (expired hold → HOLD_EXPIRED, slot AVAILABLE), release idempotent, INV-3, withdrawn sailing refused, superseded/wrong-quantity offers refused. Carrier suite 61 passed. Post-run: 0 TST rows, demo slots 18 AVAILABLE.
+- Blocked/waiting: Tisya's OK for additive contract messages (REQUEST_HOLD…BOOKING_REJECTED); `STRIPE_SECRET_KEY` (sk_test_) in .env.
+- Next: Stripe adapter (unit-tested with fake; live once key exists), Exchange intent repository + graph `book`/`paid` nodes.
+
 ## Checkpoint template (append concise updates)
 ### YYYY-MM-DD HH:MM — Phase NN
 - Done:
