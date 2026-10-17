@@ -1,7 +1,7 @@
 # Progress — Autonomous Freight Recovery
 
-**Active phase:** 03 — Booking Negotiation (implemented; live backend evidence; ASI:One run pending)  
-**Phase status:** Phase 01 CLOSED. Phase 02 PASSED. Phase 03: AT-03-01/03/04(partial)/05/06 PASS live; AT-03-02 backend PASS — ASI:One select NEEDS HUMAN VERIFICATION; AT-03-04 expired-selection live check pending (offers live 10 min).  
+**Active phase:** [Parth lane] 04 — Booking & Stripe test payments (not started). Phase 03 PASSED.  
+**Phase status:** Phase 01 CLOSED. Phase 02 PASSED. Phase 03 PASSED (AT-03-01..06; ASI:One evidence 2026-10-17). Phase 04 NOT STARTED.  
 **Updated:** 2026-10-17  
 **Scope:** Part 1. Part 2 blocked until Phase 8 passes.
 
@@ -118,6 +118,12 @@
 - Test: user messaged `@freight-recovery-exc` from a second ASI:One account → req_588966d2de21 at 16:00:17, sender `agent1q0zqghjhffthx27hku0uvr6q7wxapkvpcc0ghkm8t36dx0g5p6j6v2x8cc7` (session 769e19b5…). Main account in every earlier session: `agent1qwh4wz3qqgwqqrh2kt2s3np8x4760rr82vzkddjrytxhkscv007tgcefg3w`.
 - Result: **`agentverse_sender` is per ASI:One account** (2 accounts → 2 addresses; stable across sessions). Resolves the PR #5 open question.
 - Phase 4 decision (proposed): buyer_id = agentverse_sender; state-changing actions additionally bound to the session that created the request (already true for select); booking receipts carry booking ref + claim code for lookups outside the session.
+
+### 2026-10-17 16:10 — [Parth] Phase 03 PASSED
+- **AT-03-02 via ASI:One:** main account, session 1f0e6304-…: `requote` → req_a07d82db57e2 (8.9 s; duplicate delivery req_d16923a32ef4 served from cache, no 2nd round) → `select 2` → req_324807be325c: "Selected: option 2 — Beacon … $5,280 … not a booking". Tiger: cargo_requests req_a07d82db57e2 OFFER_SELECTED (buyer = main sender, session_id set); beacon round-2 offer SELECTED rank 2 (atlas round-2 PROPOSED rank 1); offer_selections off_beacon_e7b6a47b2209 source chat:rank; events COUNTER_ACCEPTED, OFFER_REVISED, OFFER_SELECTED; 0 holds, 0 bookings.
+- Gate met: one buyer requested freight and selected a policy-valid, negotiated, expiring carrier offer from ASI:One; selection persisted, not called booked. AT-03-01/03/05/06 evidence in the 15:30 entry; AT-03-04 in the 16:05 entry.
+- Phase 4 may assume: offer_selections + OFFER_SELECTED request state; buyer_id = agentverse_sender (per account); session-bound actions; selected offers expire (10 min) → Phase 4 must re-validate expiry before requesting a hold; TigerBookingSeam.commit_booking is the Phase 4 entry point (seam signature fixed).
+- Next: read `docs/specs/04-booking-and-stripe-payments.md`; Stripe test key (`sk_test_…`) will be needed from the user.
 
 ## Checkpoint template (append concise updates)
 ### YYYY-MM-DD HH:MM — Phase NN
