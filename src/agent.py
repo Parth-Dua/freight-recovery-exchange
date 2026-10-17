@@ -42,6 +42,7 @@ async def get_services() -> tuple[Repository, QuoteService]:
 
 async def handle(text: str, request_id: str, buyer_id: str) -> tuple[str, str]:
     """Return (route, reply text) for one chat turn."""
+    text = r.strip_mentions(text)
     route = r.classify(text)
     if route not in (r.ROUTE_CORRIDORS, r.ROUTE_QUOTES):
         return route, r.static_reply(route)
@@ -82,7 +83,7 @@ async def respond(state: MessagesState, config: RunnableConfig) -> dict:
     text, route = "", r.ROUTE_UNSUPPORTED
     try:
         text = _last_human_text(state)
-        route = r.classify(text)
+        route = r.classify(r.strip_mentions(text))
         route, body = await handle(text, request_id, metadata.get("agentverse_sender") or "local")
         status = "ok"
     except Exception as exc:  # retry-safe error instead of crashing the ACP turn

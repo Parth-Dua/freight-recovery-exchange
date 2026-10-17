@@ -55,6 +55,14 @@ class Reply:
     text: str
 
 
+_MENTION = re.compile(r"(?<![\w.])@[\w.-]+")
+
+
+def strip_mentions(message: str) -> str:
+    """ASI:One forwards the @handle (e.g. "@freight-recovery-exc") inside the text; it is not intent."""
+    return " ".join(_MENTION.sub(" ", message).split())
+
+
 def classify(message: str) -> str:
     normalized = " ".join(message[:MAX_INPUT_CHARS].lower().split())
     if not normalized:

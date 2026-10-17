@@ -133,3 +133,9 @@ def test_service_failure_returns_retry_safe_error(monkeypatch):
     monkeypatch.setattr(module, "get_services", broken)
     text = _invoke("What corridors do you support?")["messages"][-1].content
     assert text.startswith(module.SERVICE_UNAVAILABLE_REPLY) and "hunter2" not in text
+
+
+def test_asi_one_mention_reaches_quote_route(services):
+    _invoke("@freight-recovery-exc Quote 2x20GP from Jebel Ali to Mumbai")
+    cargo, _, _ = services.calls[0]
+    assert (cargo.origin_port, cargo.destination_port, cargo.quantity) == ("AEJEA", "INBOM", 2)

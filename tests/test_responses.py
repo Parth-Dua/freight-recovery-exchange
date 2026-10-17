@@ -83,3 +83,17 @@ def test_quotes_reply_lists_offers_cheapest_first_with_declines_and_errors():
 def test_missing_ports_reply_lists_corridors():
     text = r.missing_info_reply(ParsedRequest(), [Corridor(AEJEA, INBOM, ("20GP",), 3, 6, None)])
     assert "origin port and destination port" in text and "Jebel Ali (AEJEA) → Mumbai (INBOM)" in text
+
+
+@pytest.mark.parametrize(("message", "route"), [
+    # ASI:One forwards the @handle; "recovery" in our own handle must not trigger the recovery route
+    ("@freight-recovery-exc Quote 2x20GP from Jebel Ali to Mumbai", r.ROUTE_QUOTES),
+    ("@freight-recovery-exc What corridors do you support?", r.ROUTE_CORRIDORS),
+    ("@freight-recovery-exc my sailing was withdrawn, recover it", r.ROUTE_RECOVERY),
+])
+def test_mentions_are_ignored_for_routing(message, route):
+    assert r.classify(r.strip_mentions(message)) == route
+
+
+def test_strip_mentions_keeps_emails_and_prices():
+    assert r.strip_mentions("@freight-recovery-exc  ping test@example.com $5,600") == "ping test@example.com $5,600"
