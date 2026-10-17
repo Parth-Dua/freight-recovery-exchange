@@ -90,6 +90,13 @@
 - User question (open, no decision): use an Interactive Card to collect cargo details instead of free text. Specs place cards in Phase 3 WP5 (offer selection cards mapped to real offer IDs) and Phase 7 (recovery outcome cards).
 - Next action: read `docs/specs/03-booking-negotiation.md`; first verify what ASI:One card types exist (input form vs selection) and whether the agentverse-sdk LangGraph adapter can emit them.
 
+### 2026-10-17 15:15 — Phase 03 pre-check: Interactive Cards (research only, no code)
+- Docs (docs.agentverse.ai agent-driven-interactive-cards + predefined-card-schemas): card = one `MetadataContent` item in the agent's ChatMessage (+ TextContent narration). Keys: `card_protocol_version="1"`, `requires_card_interaction="true"`, `card_kind` ∈ carousel|detail|form|review|custom, `card_payload` (JSON string, ≤64 KB). Form field kinds: text, number, email, select, checkbox (**no date picker**). Submission returns `action` + field values keyed by name: as selection JSON text on direct @mention, as prose via the ASI:One planner (must handle both). Playground: asi1.ai/developer/card-playground.
+- Installed `uagents-core` 0.4.12 ships `chat.cards` helpers (`FormCardPayload`, `CarouselCardPayload`, `ReviewCardPayload`, `create_card_content`, `extract_card`, `validate_card_payload`).
+- Adapter check: agentverse-sdk 0.2.1 `extract_ai_content` emits only TextContent/ResourceContent → cards dropped as-is. Offline proof: patching module-level `agentverse_sdk.langgraph.content._convert_content_block` to map a `{"type":"card","metadata":…}` block → `MetadataContent` yields wire content `[text, metadata]`; a 7-field cargo form (972 B) passes the official validator and survives ChatMessage round-trip. Private-function patch → needs a version-pinned test.
+- Inbound caveat: SDK passes only `msg.text()` to the graph; card responses sent purely as MetadataContent would arrive empty. Docs say ASI:One returns selections as text (JSON or prose) → expected OK, must verify live.
+- NOT verified: that ASI:One renders a card coming from an external LangGraph agent (needs a live test). No decision taken on cards vs uAgent gateway.
+
 ## Checkpoint template (append concise updates)
 ### YYYY-MM-DD HH:MM — Phase NN
 - Done:
