@@ -76,8 +76,8 @@ Neither item blocks this console. Both are in folders you own.
    into the `market_events` payload, and the risk event id is prefixed onto `reason`.
    If phase 5 wants them as real columns, that is a migration in your folder.
 
-2. **`ROUTE_RECOVERY` in `src/freight_exchange/responses.py:37`** matches
-   "withdraw/disrupt/recover" and returns the canned "Coming next" line. Pointing it at
+2. **`ROUTE_RECOVERY` in `src/freight_exchange/responses.py:47`** (handled at line 100)
+   matches "withdraw/disrupt/recover" and still returns the canned "Coming next" line. Pointing it at
    real booking status is the one change that makes a withdrawal visible inside ASI:One,
    which is what turns this into a demo rather than an internal tool. One function, your
    file, your call.
