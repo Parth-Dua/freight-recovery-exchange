@@ -1,4 +1,8 @@
-"""REQUEST_OFFER / PROPOSE_OFFER / REJECT_OFFER / AGENT_ERROR (schema 1.0).
+"""Exchange <-> Carrier messages (schema 1.0).
+
+Quote: REQUEST_OFFER -> PROPOSE_OFFER | REJECT_OFFER | AGENT_ERROR
+Negotiation (at most one counter per offer):
+  COUNTER_OFFER -> ACCEPT_COUNTER | REVISED_OFFER | REJECT_COUNTER | AGENT_ERROR
 
 These are our application messages carried as typed uAgents models — not
 built-in ACP verbs. Money is integer minor units + ISO currency; timestamps
@@ -37,6 +41,11 @@ class RejectReason(str, Enum):
     BUDGET_BELOW_POLICY = "BUDGET_BELOW_POLICY"
     UNSUPPORTED_CORRIDOR = "UNSUPPORTED_CORRIDOR"
     UNSUPPORTED_CONTAINER_TYPE = "UNSUPPORTED_CONTAINER_TYPE"
+    # counter-offer outcomes
+    BELOW_POLICY = "BELOW_POLICY"
+    COUNTER_LIMIT_REACHED = "COUNTER_LIMIT_REACHED"
+    OFFER_NOT_FOUND = "OFFER_NOT_FOUND"
+    OFFER_EXPIRED = "OFFER_EXPIRED"
 
 
 class ErrorCode(str, Enum):
@@ -117,8 +126,7 @@ class _SignedReply(_Envelope):
     signature: str = ""  # carrier signature over every other field
 
 
-class ProposeOffer(_SignedReply):
-    message_type: Literal["PROPOSE_OFFER"] = "PROPOSE_OFFER"
+class _OfferTerms(_SignedReply):
     offer_id: str
     sailing_id: str
     vessel_name: str
@@ -140,6 +148,48 @@ class ProposeOffer(_SignedReply):
         return _require_utc(value)
 
 
+class ProposeOffer(_OfferTerms):
+    message_type: Literal["PROPOSE_OFFER"] = "PROPOSE_OFFER"
+
+
+class CounterOffer(_Envelope):
+    """Exchange -> carrier: the single buyer-authorized counter on one offer."""
+
+    message_type: Literal["COUNTER_OFFER"] = "COUNTER_OFFER"
+    offer_id: str
+    round: int = Field(1, ge=1, le=1)
+    proposed_total_price_minor: int = Field(..., ge=1)
+    currency: str = Field("USD", min_length=3, max_length=3)
+    expires_at: datetime
+
+    @validator("expires_at", allow_reuse=True)
+    def _utc_expires(cls, value):
+        return _require_utc(value)
+
+
+class AcceptCounter(_OfferTerms):
+    """Carrier accepts the counter price: a NEW signed offer at exactly that price."""
+
+    message_type: Literal["ACCEPT_COUNTER"] = "ACCEPT_COUNTER"
+    supersedes_offer_id: str
+
+
+class RevisedOffer(_OfferTerms):
+    """Carrier meets part-way: a NEW signed offer between the counter and its opening price."""
+
+    message_type: Literal["REVISED_OFFER"] = "REVISED_OFFER"
+    supersedes_offer_id: str
+
+
+class RejectCounter(_SignedReply):
+    """Carrier declines the counter; its opening offer still stands until it expires."""
+
+    message_type: Literal["REJECT_COUNTER"] = "REJECT_COUNTER"
+    offer_id: str
+    reason_code: RejectReason
+    reason: str
+
+
 class RejectOffer(_SignedReply):
     message_type: Literal["REJECT_OFFER"] = "REJECT_OFFER"
     reason_code: RejectReason
@@ -153,15 +203,20 @@ class AgentError(_SignedReply):
 
 
 CarrierReply = Union[ProposeOffer, RejectOffer, AgentError]
-_REPLY_TYPES = {m.__fields__["message_type"].default: m for m in (ProposeOffer, RejectOffer, AgentError)}
+CounterReply = Union[AcceptCounter, RevisedOffer, RejectCounter, AgentError]
+OfferTerms = _OfferTerms
+_REPLY_TYPES = {
+    m.__fields__["message_type"].default: m
+    for m in (ProposeOffer, RejectOffer, AgentError, AcceptCounter, RevisedOffer, RejectCounter)
+}
 
 
 class MalformedReply(ValueError):
     """Reply payload is not valid JSON or does not match a known reply schema."""
 
 
-def parse_carrier_reply(raw: Union[str, bytes, dict]) -> CarrierReply:
-    """Parse a sync reply payload by its ``message_type``."""
+def parse_carrier_reply(raw: Union[str, bytes, dict]) -> Union[CarrierReply, CounterReply]:
+    """Parse any carrier reply payload by its ``message_type``."""
     try:
         data = raw if isinstance(raw, dict) else json.loads(raw)
     except (TypeError, ValueError) as exc:

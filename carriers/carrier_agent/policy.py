@@ -7,6 +7,7 @@ never sent to the Exchange — only the resulting offer terms are.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -33,10 +34,11 @@ class Policy:
     utilization_premium_pct: int
     offer_ttl_seconds: int
     selection: str  # earliest_arrival | earliest_departure
+    concession_pct: int = 0  # max discount off our own opening price on a counter (private)
 
     @classmethod
     def from_json(cls, data: dict) -> "Policy":
-        return cls(**{k: data[k] for k in cls.__dataclass_fields__})
+        return cls(**{k: data[k] for k in cls.__dataclass_fields__ if k in data})
 
 
 @dataclass(frozen=True)
@@ -100,4 +102,49 @@ def decide(cargo: CargoSpec, sailings: list[SailingInventory], policy: Policy, n
             # Do not reveal the private floor; just decline.
             return Decline(RejectReason.BUDGET_BELOW_POLICY, "budget is below what we can offer")
         total = cargo.max_total_price_minor
+    enforce_floor(total, policy, quantity)
     return Quote(sailing=sailing, quantity=quantity, total_price_minor=total)
+
+
+# ---- counter-offers ---------------------------------------------------------
+
+PRICE_STEP_MINOR = 1000  # quote in whole $10 steps
+
+
+class PolicyViolation(AssertionError):
+    """Raised if any code path tries to issue a price below the private floor."""
+
+
+@dataclass(frozen=True)
+class CounterDecision:
+    kind: str  # accept | revise | reject
+    total_price_minor: int | None = None
+    reason_code: RejectReason | None = None
+    reason: str = ""
+
+
+def floor_total(policy: Policy, quantity: int) -> int:
+    return policy.min_price_per_unit_minor * quantity
+
+
+def decide_counter(original_total: int, quantity: int, proposed: int, policy: Policy) -> CounterDecision:
+    """One counter: accept, meet part-way, or reject. Never below the private floor, never above
+    our own opening price, and the floor itself is never revealed in the reason text."""
+    floor = floor_total(policy, quantity)
+    concession_limit = math.ceil(original_total * (100 - policy.concession_pct) / 100 / PRICE_STEP_MINOR) * PRICE_STEP_MINOR
+    min_acceptable = min(original_total, max(floor, concession_limit))
+
+    if proposed >= min_acceptable:
+        decision = CounterDecision("accept", min(proposed, original_total))
+    elif proposed >= floor:
+        decision = CounterDecision("revise", min_acceptable)
+    else:
+        return CounterDecision("reject", reason_code=RejectReason.BELOW_POLICY,
+                               reason="that price is below what we can offer on this sailing")
+    enforce_floor(decision.total_price_minor, policy, quantity)
+    return decision
+
+
+def enforce_floor(total_price_minor: int, policy: Policy, quantity: int) -> None:
+    if total_price_minor < floor_total(policy, quantity):
+        raise PolicyViolation("refusing to issue a price below the carrier floor")
