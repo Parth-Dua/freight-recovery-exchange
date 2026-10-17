@@ -114,6 +114,11 @@
 - NEEDS-FROM-TISYA: console can write the 3 new columns instead of packing them into `reason`; run `uv run python scripts/db.py migrate` on her Tiger.
 - Next: PR for review (do not merge without user); user runs AT-03-02 in ASI:One; then Phase 4.
 
+### 2026-10-17 16:05 — [Parth] Buyer identity check (Phase 4 input)
+- Test: user messaged `@freight-recovery-exc` from a second ASI:One account → req_588966d2de21 at 16:00:17, sender `agent1q0zqghjhffthx27hku0uvr6q7wxapkvpcc0ghkm8t36dx0g5p6j6v2x8cc7` (session 769e19b5…). Main account in every earlier session: `agent1qwh4wz3qqgwqqrh2kt2s3np8x4760rr82vzkddjrytxhkscv007tgcefg3w`.
+- Result: **`agentverse_sender` is per ASI:One account** (2 accounts → 2 addresses; stable across sessions). Resolves the PR #5 open question.
+- Phase 4 decision (proposed): buyer_id = agentverse_sender; state-changing actions additionally bound to the session that created the request (already true for select); booking receipts carry booking ref + claim code for lookups outside the session.
+
 ## Checkpoint template (append concise updates)
 ### YYYY-MM-DD HH:MM — Phase NN
 - Done:
