@@ -120,3 +120,11 @@
 - Files: progress.md (this required checkpoint only).
 - Blockers / decisions: PRD native-payment requirement conflicts with selected Stripe test-only Checkout; PRD gateway recommendation differs from active direct-LangGraph spec. Proposed scope reductions remain recommendations, not approved changes. Phase 1 remains NOT VERIFIED.
 - Next action: Team confirms demo scope, builder count, recovery authority/priority and documentation reconciliation; implementation still starts with Phase 1 real ASI:One roundtrip gate.
+
+### 2026-10-17 — [Tisya] Proposed: recovery decision moves to Tisya (pending Parth's OK)
+- Proposal (branch `tisya/recovery-split`, not merged): Parth talks to the carriers and makes bookings real; Tisya decides who goes where, checks carrier claims against Tiger, gets approval, explains. Step-by-step owners in `OWNERSHIP.md`.
+- Phase 6 split: Parth = `REQUEST_RECOVERY_CAPACITY` over ACP + message validation; Tisya = claim checks + OR-Tools allocation (`AllocationSeam`, new `packages/freight_allocation/`). Phase 7 split: Parth = holds, confirm, supersede, re-solve trigger (`RecoverySeam`); Tisya = approval (`ApprovalSeam`) and recovery cards.
+- Seams added: `AllocationSeam`, `ApprovalSeam`, types `RecoveryOffer`, `RecoveryProposal`, fakes `FakeAllocationSeam` (greedy, not the solver), `FakeApprovalSeam`, `demo_recovery_offers()`.
+- Fixed: seams README wrongly said `console/pyproject.toml` depends on `freight-seams`. It does not yet.
+- Open: `max_additional_cost_minor` (D5) is stored nowhere; defaults to 0 until phase 4 records it. Buyer identity (Parth's finding: shared `agentverse_sender`) is Tisya's to investigate.
+- Real `DisruptionSeam` (Tiger-backed) does not exist yet: console's `withdraw_sailing` is not wired to the seam and `disrupted_bookings()` is unimplemented.
