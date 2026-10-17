@@ -1,0 +1,26 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Python / tooling
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# LangGraph dev server local state
+.langgraph_api/
+
+# OS
+.DS_Store
+
+# uagents-core runtime log
+uagents_core.log
+*.log
+
+# Build artifacts
+*.egg-info/
+build/
+dist/

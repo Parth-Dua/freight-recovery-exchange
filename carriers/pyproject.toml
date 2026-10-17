@@ -1,0 +1,23 @@
+[project]
+name = "freight-carriers"
+version = "0.1.0"
+description = "Fictional company Carrier Agents (uAgents) for the Freight Recovery Exchange demo"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "uagents==0.26.1",
+    "psycopg[binary]>=3.2,<4",
+    "psycopg-pool>=3.2,<4",
+    "python-dotenv>=1.0,<2",
+    "freight-contracts",
+]
+
+[tool.uv.sources]
+# Non-editable: see root pyproject (hidden .pth files are skipped by Python on this Mac).
+freight-contracts = { path = "../packages/freight_contracts", editable = false }
+
+[dependency-groups]
+dev = ["pytest>=8,<9"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

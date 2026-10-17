@@ -1,0 +1,29 @@
+[project]
+name = "freight-recovery-exchange"
+version = "0.1.0"
+description = "Autonomous Freight Recovery Exchange — Exchange Agent (LangGraph + Agentverse)"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "agentverse-sdk[langgraph]==0.2.1",
+    "langgraph>=1.2,<1.3",
+    "langchain-core>=1.4,<2",
+    "python-dotenv>=1.0,<2",
+    "psycopg[binary]>=3.2,<4",
+    "langgraph-api==0.9.1",
+    "freight-contracts",
+    "psycopg-pool>=3.2,<4",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<9"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+# Non-editable on purpose: this Mac re-applies the "hidden" flag to .pth files in
+# .venv and Python skips hidden .pth files, which breaks editable installs.
+# After changing contracts: uv sync --reinstall-package freight-contracts
+[tool.uv.sources]
+freight-contracts = { path = "packages/freight_contracts", editable = false }

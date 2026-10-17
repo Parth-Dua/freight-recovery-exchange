@@ -1,0 +1,13 @@
+[project]
+name = "freight-contracts"
+version = "0.1.0"
+description = "Versioned Exchange <-> Carrier agent message contracts (shared by both runtimes)"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "uagents-core>=0.4.11,<0.5",
+    "pydantic>=2.8,<3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

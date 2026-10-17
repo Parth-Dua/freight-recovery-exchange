@@ -1,0 +1,83 @@
+# Progress — Autonomous Freight Recovery
+
+**Active phase:** 02 — Carrier Agents & Tiger (Phase 01 closed by user decision)  
+**Phase status:** Phase 01 CLOSED (user-confirmed ASI:One round-trip; T07/T08 not formally run). Phase 02 IN PROGRESS — WP1 (contracts) started; Tiger URL pending from user.  
+**Updated:** 2026-10-17  
+**Scope:** Part 1. Part 2 blocked until Phase 8 passes.
+
+## Verified completed
+- P1.1 skeleton, P1.2 deterministic behavior, P1.3 local server via `langgraph-av` (no tunnel/registration yet). See checkpoint below.
+
+## Tests / evidence
+- Local only: T01, T02, T03, T09 pass; T08 local restart passes. T04–T07 + T08 (via ASI:One) NOT run. Do not infer Phase 1 completion.
+
+## Blockers / unresolved decisions
+- Phase 1 must be verified via real ASI:One → Agentverse → ACP → running code roundtrip.
+- Stripe **test-only** Checkout is selected; whether it satisfies Fetch's separate Agent Payment Protocol bonus remains **unverified**.
+- Other open decisions (container unit, shortage priority, recovery approval policy) are listed in PRD §21; do not silently turn suggestions into product commitments.
+
+## Changed files
+- Initialized Part 1 spec pack; no runtime application code was created by this pack.
+- Phase 1 code added 2026-10-17 (see checkpoint).
+
+## Exact next action
+1. (Human) Agentverse → Launch an Agent → External Agent → LangGraph; name "Freight Recovery Exchange (Demo)"; keywords per README; copy Agent URI into `.env` as `AGENT_URI=` (secret — never paste elsewhere).
+2. `uv run langgraph-av dev --tunnel --no-browser` → confirm log shows "Registered with agentverse", no init errors → click *Evaluate registration* (T04).
+3. Agentverse chat: "What corridors do you currently support?" → match `Ref: req_…` to backend `request_handled` log (T05).
+4. ASI:One: `@<handle> What corridors do you currently support?` (T06), then fresh chat natural-language discovery (T07, record separately), then restart + repeat (T08). Record handle, request IDs, screenshots here.
+5. Begin Phase 2 **only after Phase 1 gate passes**.
+
+## Checkpoints
+
+### 2026-10-17 11:20 — Phase 01 (P1.1–P1.3)
+- Done: uv project (Python 3.12) pinned via `uv.lock`: agentverse-sdk[langgraph] 0.2.1, langgraph 1.2.16, langgraph-cli 0.4.36, langgraph-api 0.9.1, uagents-core 0.4.12. Deterministic single-node `MessagesState` graph (no LLM) exported as `agent`; fixture `get_supported_corridors()` (`phase1-static-catalog`); keyword routing for capabilities / corridors / booking-declined / recovery-declined / unsupported; retry-safe error reply; JSON `request_handled` logs (request_id, route, status, duration_ms, agentverse sender/session; never message text or URI). Agentverse profile (description, README, starter prompts) passed to `agentverse_init` only when `AGENT_URI` is set.
+- SDK facts verified from installed source (not guessed): SDK POSTs `{"messages":[{"role":"human","content":…}]}` to `/threads/{uuid(session)}/runs/wait`, assistant_id `agent`; reply = AI/tool messages after last human; registration URL comes from `LANGGRAPH_API_URL` (set by `--tunnel`); keywords are NOT in `AgentProfile` → set in UI; mailbox mode exists (`init(..., mailbox=True)`) as fallback only.
+- **Decision change:** spec §6 says `AGENT_URI` "is an identifier, not a private seed" — WRONG for SDK 0.2.1: URI = `https://<handle>:<key>@host/<name>`, identity = `Identity.from_seed(key)`. Treat as secret.
+- Tests / evidence: `uv run pytest -q` → 25 passed (T01 import, T02 fixture exact, T03 booking declined, SDK `extract_ai_content` contract, threaded follow-up, log correlation without message text, node-failure path). `langgraph-av dev --no-browser --port 2024` + curl to `/threads/{id}/runs/wait` with SDK payload: 4 required prompts returned fixture replies; log request_ids matched (e.g. req_c0e72a57f2a2 → route get_supported_corridors). Restart → `/ok` and corridor reply again. T09 grep: only placeholders. `.env`, `*.log`, `.langgraph_api/` confirmed gitignored.
+- Files: pyproject.toml, uv.lock, .python-version, .gitignore, .env.example, langgraph.json, src/agent.py, src/freight_exchange/{__init__,capabilities,responses,profile,observability}.py, tests/{conftest,test_capabilities,test_responses,test_agent_import}.py, README.md (runbook appended).
+- Blockers / decisions: P1.4+ needs a human Agentverse login + ASI:One account. Note: module is imported twice by langgraph-av (preload + server), so `agentverse_init` runs twice — same values, believed harmless; confirm in first registered run. Project dir is not its own git repo (enclosing repo is `/Users/parthdua`); nothing committed.
+- Next action: "Exact next action" step 1 above.
+
+### 2026-10-17 12:25 — Phase 01 (P1.4 registration)
+- Done: Agentverse external LangGraph agent created by user. Handle `@freight-recovery-exc`, name "Freight Recovery Exchange", address `agent1q2h7svwmef55v9pnjdvuhlnd2t9gr6mc4jyp5w0v0akz7hvkduzh6h4wp52`. AGENT_URI stored only in `.env` (mode 600, gitignored) with `?log=INFO`. NOTE: user pasted the URI (incl. key) into the AI chat — rotate key if Agentverse allows.
+- Evidence: SDK log `Registered with agentverse`; public Almanac `GET agentverse.ai/v1/almanac/agents/<address>` → `status: active`, type proxy, endpoint `agentverse.ai/v2/agents/proxy/submit`, chat protocol digest `30a801ed…`. First run logged `Failed to report agent start:` (empty msg, transient timeout); replaying `set_agent_status(active=True)` succeeded in 0.43s; second restart had no error.
+- Blocker found + fixed: default cloudflared QUIC tunnel dropped every ~1 min ("timeout: no recent network activity"), then died after a network change (530/000). Restarted with `TUNNEL_TRANSPORT_PROTOCOL=http2` → `protocol=http2`, `/ok` 200 ×3. Current URL https://designed-pond-hunting-stages.trycloudflare.com (changes every restart).
+- Files: README.md (runbook: http2 + ?log=INFO), progress.md. `.env` local only.
+- Next action: user clicks Evaluate registration (T04); Agentverse chat + ASI:One `@freight-recovery-exc What corridors do you currently support?` (T05/T06); match `Ref: req_…` to `request_handled` log; then T07 discovery, T08 restart.
+
+### 2026-10-17 13:35 — Phase 01 (DECISION: mailbox mode)
+- **Decision (user-approved 2026-10-17):** switch from `--tunnel` to SDK mailbox mode (spec §12 fallback). Reason: quick tunnels died repeatedly — QUIC dropped every ~1 min; http2 tunnel lasted ~16 min then Cloudflare deleted it ("Unauthorized: Tunnel not found"), URL changes on each restart. Tunnel path kept as fallback via `AGENTVERSE_MAILBOX=false`.
+- Done: `src/agent.py` passes `mailbox=` to `agentverse_init` (env `AGENTVERSE_MAILBOX`, default true); `.env.example`, README runbook updated. Tests: 25 passed.
+- Evidence: `uv run langgraph-av dev --no-browser` → `Registered with agentverse`, `Mailbox client started for agent1q2h7…wp52`, no SDK errors. Almanac → `status: active`, `type: mailbox`, endpoint `https://agentverse.ai/v2/agents/mailbox/submit`, chat protocol digest unchanged.
+- Next action: user runs Evaluate registration (T04), Agentverse chat (T05), ASI:One `@freight-recovery-exc What corridors do you currently support?` (T06); match `Ref: req_…` ↔ `request_handled` log.
+
+### 2026-10-17 13:40 — Phase 01 (first inbound ACP message)
+- Evidence (backend side): mailbox delivered a chat at 20:39:36Z → SDK POST `/threads/{session}/runs/wait` → `Background run succeeded`; log `request_handled` request_id `req_3436fb8e4050`, route `get_supported_corridors`, status ok, input_chars 103, sender `agent1qwh4wz3qqgwqqrh2kt2s3np8x4760rr82vzkddjrytxhkscv007tgcefg3w`, session `1f08a074-b3e8-4110-ad84-664d440f4119`. No SDK send-reply error logged.
+- Pending: user confirmation of which surface sent it (Agentverse evaluation/chat vs ASI:One) and that the visible reply shows `Ref: req_3436fb8e4050` + catalog marker → then mark T04/T05 or T06.
+
+### 2026-10-17 14:00 — Phase 01 CLOSED (user decision)
+- User confirmed (2026-10-17) the visible reply for `req_3436fb8e4050` matched: ASI:One/Agentverse → mailbox → backend → reply works. Treated as T05/T06 pass (human-verified; no screenshot stored).
+- Not formally run: T04 evaluation button result, T07 natural-language discovery, T08 restart-then-chat. User explicitly chose to proceed to Phase 2; retest T07/T08 opportunistically during Phase 2 (each restart + chat counts for T08).
+- Phase 2 may assume: handle `@freight-recovery-exc`, address `agent1q2h7…wp52`, mailbox mode, start with `uv run langgraph-av dev --no-browser`, inbound ACP → `/threads/{session}/runs/wait` with `MessagesState`, run metadata includes `agentverse_sender`/`agentverse_session`.
+
+### 2026-10-17 14:40 — Phase 02 (decisions + contracts)
+- Decisions: `docs/decisions/0002-carrier-transport.md` (user chose local uAgents + sync request/reply + carrier-signed replies), `0003-demo-corridor.md` (AEJEA→INBOM 20GP, catalog from Tiger), `0001` (mailbox, retro-recorded). Tiger: user is creating a Tiger Cloud service and will put `TIGER_DATABASE_URL` in `.env` (not chat).
+- Finding: `uagents` (via cosmpy) needs protobuf 5, `langgraph-api` 0.9.1 needs protobuf ≥6.32 → cannot share env. `uv add uagents` silently downgraded langgraph-api to 0.4.28; reverted and pinned `langgraph-api==0.9.1`. Carriers will get their own uv project `carriers/`. `uv pip check` clean; 25 tests pass.
+- Finding: `uagents_core.models.Model` is **pydantic v1** — contracts use `pydantic.v1` validators. `uagents.Model` is the same class; agent identity = `Identity.from_seed(seed, 0)`.
+- Done: `packages/freight_contracts` (RequestOffer, ProposeOffer, RejectOffer, AgentError, CargoSpec, typed RejectReason/ErrorCode, `parse_carrier_reply`, sign/verify). Smoke check: sign→parse→verify True; wrong address False; tampered price False; malformed/unknown/invalid payloads raise MalformedReply; same-port and naive timestamps rejected.
+- Next: Tiger migrations + seed (WP1/WP4), carrier project (WP2/3), Exchange CarrierClient + graph route (WP5), tests (WP6).
+
+## Checkpoint template (append concise updates)
+### YYYY-MM-DD HH:MM — Phase NN
+- Done:
+- Tests / evidence:
+- Files:
+- Blockers / decisions:
+- Next action (exact command/task):
+
+### 2026-10-17 — Planning-only PRD review
+- Done: Read active Phase 1 spec and PRD; assessed 24-hour feasibility and checked official Fetch hackpack/LangGraph documentation. No code or PRD changes.
+- Tests / evidence: No tests run (planning only). Official hackpack lists Payment Protocol/cards as bonuses; no integration gates were verified.
+- Files: progress.md (this required checkpoint only).
+- Blockers / decisions: PRD native-payment requirement conflicts with selected Stripe test-only Checkout; PRD gateway recommendation differs from active direct-LangGraph spec. Proposed scope reductions remain recommendations, not approved changes. Phase 1 remains NOT VERIFIED.
+- Next action: Team confirms demo scope, builder count, recovery authority/priority and documentation reconciliation; implementation still starts with Phase 1 real ASI:One roundtrip gate.
