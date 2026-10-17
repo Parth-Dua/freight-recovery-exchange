@@ -6,10 +6,20 @@ This file only covers *who edits what* and *how changes land*.
 
 ## Ownership
 
+The cut is **two agent boundaries**. Parth owns agent-to-carrier: ACP out to the
+carrier uAgents, Almanac, policy, Tiger, the solver, payments. Tisya owns
+agent-to-human: the ASI:One boundary, discovery, cards, session state, approvals,
+plus the carrier console and the demo.
+
 | Owner | Folders |
 |---|---|
-| Parth | `src/`, `carriers/`, `packages/`, `scripts/`, `docs/`, `tests/`, root `pyproject.toml` |
-| Tisya | `console/`, `.github/`, `OWNERSHIP.md`, demo assets |
+| Parth | `src/` except `src/freight_exchange/asi/`, `carriers/`, `scripts/`, `docs/`, `tests/`, root `pyproject.toml` |
+| Tisya | `console/`, `src/freight_exchange/asi/`, `.github/`, `OWNERSHIP.md`, demo assets |
+| Shared, additive only | `packages/freight_contracts/`, `packages/freight_seams/` |
+
+`src/freight_exchange/asi/` does not exist yet. It is proposed as the home for the
+ASI:One-facing adapter (card build and parse, discovery profile, approval state) so
+that surface has one owner without splitting the graph itself, which stays Parth's.
 
 One rule: **never edit a folder you do not own.** If you need a change in the other
 person's folder, write down the exact change (PR description, or a `NEEDS-FROM-<owner>`
