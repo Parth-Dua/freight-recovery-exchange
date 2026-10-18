@@ -185,3 +185,12 @@
 - Done: `src/freight_exchange/asi/notify.py` (Tisya's `asi/` folder, created). `notify_buyer(agent_uri, BuyerAddress, text)` sends a ChatMessage signed as the agent to the buyer's ASI:One address and session, via the same SDK function every reply uses (`agentverse_sdk._common.av.send_message_to_agent`; agentverse-sdk 0.2.1 `_app._send_reply`). `buyer_address_for_booking` finds where to reach a booking's buyer (booking_intents.session_id, then cargo_requests.session_id); demo buyers like `buyer_b` are skipped. CLI for the spike. Key read from `NOTIFY_AGENT_URI` first so a non-exchange machine can send as the agent without ever running a second copy.
 - Tests: `tests/asi/test_notify.py` 8 passed (incl. a guard that fails if the SDK pin or the private function's signature changes); root 125 passed. Unit only; nothing sent.
 - NOT verified yet: whether ASI:One displays an unprompted message (same session / new session / no session) and whether the mobile app pushes it. Live spike pending (needs the exchange URI in Tisya's .env as NOTIFY_AGENT_URI, and her sender + session from Parth's request_handled log).
+
+### 2026-10-18 02:05 UTC — [Tisya] Notification spike: PASSED for same-session
+- Parth ran `notify.py` from his machine (his AGENT_URI, worktree on tisya/notify-buyer) to Tisya's ASI:One sender `agent1qty00j…99nmc0`:
+  - 02:02:18 `--session 0865becb-db3a-44e3-9eb4-6f06b5843bc5` (the conversation she had open, req_4ec0a565931e): **shown on asi1.ai AND pushed to her phone** (ASI:One app), msg 340ee108-….
+  - 02:03:52 no session: accepted, **never shown**. 02:05:16 new random session: accepted, **never shown**.
+- Conclusion: the exchange can notify a buyer unprompted, but only into a conversation ASI:One already knows. ASI:One accepts the other two silently, so `notify_buyer` now refuses to send without a stored session (`WouldNotDisplay`) and `buyer_address_for_booking` returns None without one. The ASI:One app cannot chat with custom agents ("isn't available in the ASI:One mobile app yet") but still delivers the push.
+- Decision (Tisya + Parth): notifications are sent from the exchange process, not another machine. Acks and buyer replies return to the exchange's mailbox, so only the sender's logs can account for them; no AGENT_URI sharing.
+- Tests: tests/asi 11 passed; root 128 passed.
+- Unknown: whether a much older conversation still displays (demo gap is minutes, so low risk).

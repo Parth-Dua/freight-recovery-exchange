@@ -18,6 +18,7 @@ from freight_exchange.asi import notify
 from freight_exchange.asi.notify import (
     BuyerAddress,
     NotNotifiable,
+    WouldNotDisplay,
     build_message,
     buyer_address_for_booking,
     is_notifiable,
@@ -117,3 +118,28 @@ def test_booking_lookup_returns_where_to_reach_the_buyer() -> None:
 def test_booking_lookup_skips_demo_buyers_and_missing_bookings() -> None:
     assert asyncio.run(buyer_address_for_booking(_FakeConn(("buyer_b", None)), "BK-1")) is None
     assert asyncio.run(buyer_address_for_booking(_FakeConn(None), "BK-404")) is None
+
+
+def test_booking_without_a_stored_session_is_not_reachable() -> None:
+    """Live spike: ASI:One silently drops messages that carry no known session."""
+    assert asyncio.run(buyer_address_for_booking(_FakeConn((BUYER, None)), "BK-1")) is None
+
+
+def test_refuses_to_send_what_asi_one_would_silently_drop(monkeypatch) -> None:
+    async def must_not_send(*args, **kwargs):
+        raise AssertionError("should not send")
+
+    monkeypatch.setattr(notify, "send_message_to_agent", must_not_send)
+    with pytest.raises(WouldNotDisplay):
+        asyncio.run(notify_buyer(FAKE_URI, BuyerAddress(BUYER, None), "hi"))
+
+
+def test_spike_override_still_sends_without_a_session(monkeypatch) -> None:
+    sent = []
+
+    async def fake_send(destination, msg, sender, *, session_id=None, agentverse_config=None, **_):
+        sent.append(session_id)
+
+    monkeypatch.setattr(notify, "send_message_to_agent", fake_send)
+    asyncio.run(notify_buyer(FAKE_URI, BuyerAddress(BUYER, None), "test", allow_unshown=True))
+    assert sent == [None]

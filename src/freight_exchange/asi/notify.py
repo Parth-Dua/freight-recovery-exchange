@@ -10,6 +10,14 @@ Where to send: the buyer is identified by their ASI:One agent address (agentvers
 one per ASI:One account, stable across chats; Parth's Phase 4 finding), and the conversation
 by the session id the exchange stores on cargo_requests.session_id.
 
+Live result (2026-10-18 02:02-02:05 UTC, sent by Parth's exchange agent to Tisya's account):
+  - session = the conversation she had open  -> shown on asi1.ai AND pushed to her phone
+  - session = a new random id                -> accepted, never shown
+  - no session                               -> accepted, never shown
+ASI:One accepts all three without error but only displays the first, so notify_buyer
+refuses to send without the buyer's stored session (see WouldNotDisplay). The phone push
+arrived even though the ASI:One app cannot otherwise chat with custom agents.
+
 Uses one private SDK function, agentverse_sdk._common.av.send_message_to_agent. The root
 project pins agentverse-sdk==0.2.1, and tests/asi/test_notify.py fails loudly if that pin
 or the function's signature changes.
@@ -17,8 +25,8 @@ or the function's signature changes.
 Command line (the notification spike):
 
     uv run python src/freight_exchange/asi/notify.py --to agent1q... --session <uuid> "text"
-    uv run python src/freight_exchange/asi/notify.py --to agent1q... --session new  "text"
-    uv run python src/freight_exchange/asi/notify.py --to agent1q... --session none "text"
+    uv run python src/freight_exchange/asi/notify.py --to agent1q... --session new  --force "text"
+    uv run python src/freight_exchange/asi/notify.py --to agent1q... --session none --force "text"
 
 The key comes from NOTIFY_AGENT_URI in the repo-root .env, falling back to AGENT_URI.
 Keep the exchange's URI under NOTIFY_AGENT_URI on any machine that is not the one running
@@ -64,6 +72,10 @@ class NotNotifiable(ValueError):
     """The buyer id is not an ASI:One agent address (for example a preseeded demo buyer)."""
 
 
+class WouldNotDisplay(ValueError):
+    """No stored session: ASI:One would accept the message and silently never show it."""
+
+
 def is_notifiable(buyer_id: str | None) -> bool:
     return bool(buyer_id) and buyer_id.startswith(AGENT_ADDRESS_PREFIX)
 
@@ -90,10 +102,18 @@ def agent_uri_from_env() -> str:
     return uri
 
 
-async def notify_buyer(agent_uri: str, buyer: BuyerAddress, text: str) -> Notified:
-    """Send `text` to the buyer, signed as the agent in `agent_uri`."""
+async def notify_buyer(
+    agent_uri: str, buyer: BuyerAddress, text: str, *, allow_unshown: bool = False
+) -> Notified:
+    """Send `text` to the buyer, signed as the agent in `agent_uri`.
+
+    Needs the buyer's stored conversation session: without it ASI:One drops the message
+    silently, so this raises WouldNotDisplay unless `allow_unshown` (spike testing only).
+    """
     if not is_notifiable(buyer.agent_address):
         raise NotNotifiable(f"{buyer.agent_address!r} is not an ASI:One agent address")
+    if buyer.session_id is None and not allow_unshown:
+        raise WouldNotDisplay("no stored session for this buyer; ASI:One would not show the message")
     uri = AgentUri.from_str(agent_uri)
     now = datetime.now(timezone.utc)
     message = build_message(text, now)
@@ -136,8 +156,8 @@ async def buyer_address_for_booking(conn, booking_id: str) -> BuyerAddress | Non
     """Where to notify the buyer of a booking, or None if they can't be notified.
 
     Prefers the session where they booked (booking_intents, Phase 4), then the session
-    where they asked for quotes. Without a stored session the buyer is still reachable
-    by address, but the message may not land in the conversation they expect.
+    where they asked for quotes. Returns None when no session is stored, because ASI:One
+    silently drops messages without one.
     """
     try:
         row = await (await conn.execute(BUYER_FOR_BOOKING_SQL, (booking_id,))).fetchone()
@@ -146,7 +166,7 @@ async def buyer_address_for_booking(conn, booking_id: str) -> BuyerAddress | Non
             raise
         await conn.rollback()
         row = await (await conn.execute(BUYER_FOR_BOOKING_SQL_PRE_PHASE_4, (booking_id,))).fetchone()
-    if row is None or not is_notifiable(row[0]):
+    if row is None or not is_notifiable(row[0]) or not row[1]:
         return None
     return BuyerAddress(agent_address=row[0], session_id=parse_session(row[1]))
 
@@ -156,13 +176,14 @@ def _main(argv: list[str]) -> int:
 
     parser = argparse.ArgumentParser(description="Message a buyer in ASI:One, unprompted.")
     parser.add_argument("--to", required=True, help="buyer's ASI:One agent address (agent1q...)")
-    parser.add_argument("--session", default="none", help="stored session id, 'new', or 'none'")
+    parser.add_argument("--session", required=True, help="the buyer's stored session id ('new'/'none' need --force)")
+    parser.add_argument("--force", action="store_true", help="send even though ASI:One will not show it (testing)")
     parser.add_argument("text", help="what to say")
     args = parser.parse_args(argv)
 
     load_dotenv(REPO_ROOT / ".env")
     buyer = BuyerAddress(agent_address=args.to, session_id=parse_session(args.session))
-    result = asyncio.run(notify_buyer(agent_uri_from_env(), buyer, args.text))
+    result = asyncio.run(notify_buyer(agent_uri_from_env(), buyer, args.text, allow_unshown=args.force))
     session = str(result.session_id) if result.session_id else "none"
     print(f"sent msg {result.msg_id} to {result.agent_address[:16]}... session={session} at {result.sent_at:%H:%M:%S} UTC")
     return 0
