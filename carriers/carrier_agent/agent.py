@@ -20,7 +20,15 @@ from freight_contracts import (
     SCHEMA_VERSION,
     AcceptCounter,
     AgentError,
+    BookingConfirmed,
+    BookingRejected,
+    ConfirmBooking,
     CounterOffer,
+    HoldConfirmed,
+    HoldRejected,
+    HoldReleased,
+    ReleaseHold,
+    RequestHold,
     ErrorCode,
     ProposeOffer,
     RejectCounter,
@@ -32,6 +40,7 @@ from freight_contracts import (
 from freight_contracts.messages import RejectReason
 from uagents import Agent, Context, Protocol
 
+from carrier_agent import holds
 from carrier_agent.inventory import CarrierInventory, LoggedOffer
 from carrier_agent.policy import Decline, Policy, SailingInventory, decide, decide_counter
 
@@ -104,6 +113,17 @@ def build_reply(
         "expires_at": now + timedelta(seconds=policy.offer_ttl_seconds),
         "source_kind": "simulated",
     }
+
+
+def envelope_precheck(msg, *, sender: str, allowed_requesters: set[str], now: datetime) -> dict | None:
+    """Authorization / schema / expiry checks shared by hold, release and confirm. Returns AGENT_ERROR fields."""
+    if sender not in allowed_requesters:
+        return {"error_code": ErrorCode.UNAUTHORIZED_REQUESTER, "detail": "requester not authorized"}
+    if msg.schema_version != SCHEMA_VERSION:
+        return {"error_code": ErrorCode.UNSUPPORTED_SCHEMA_VERSION, "detail": f"expected schema {SCHEMA_VERSION}"}
+    if msg.expires_at <= now:
+        return {"error_code": ErrorCode.REQUEST_EXPIRED, "detail": "request already expired"}
+    return None
 
 
 def counter_precheck(
@@ -256,6 +276,77 @@ def build_carrier_agent(
             "negotiation_id": msg.negotiation_id, "offer_id": msg.offer_id, "reply": reply.message_type,
             "duration_ms": round((time.perf_counter() - started) * 1000, 1),
         }))
+
+    async def _send(ctx: Context, sender: str, reply, msg, event: str, started: float) -> None:
+        reply.signature = agent.sign_digest(payload_digest(reply))
+        await ctx.send(sender, reply)
+        ctx.logger.info(json.dumps({
+            "event": event, "carrier_id": carrier_id, "request_id": msg.request_id, "reply": reply.message_type,
+            "code": getattr(reply, "code", None), "duration_ms": round((time.perf_counter() - started) * 1000, 1),
+        }))
+
+    @protocol.on_message(model=RequestHold, replies={HoldConfirmed, HoldRejected, AgentError})
+    async def on_request_hold(ctx: Context, sender: str, msg: RequestHold) -> None:
+        started, now = time.perf_counter(), _now()
+        base = reply_base(msg, carrier_id=carrier_id, carrier_address=agent.address, now=now)
+        try:
+            err = envelope_precheck(msg, sender=sender, allowed_requesters=allowed_requesters, now=now)
+            if err:
+                reply = AgentError(**base, **err)
+            else:
+                policy = await inventory.policy()
+                out = await holds.request_hold(
+                    inventory.pool, carrier_id, offer_id=msg.offer_id, request_id=msg.request_id,
+                    buyer_id=msg.buyer_id, quantity=msg.quantity, idempotency_key=msg.idempotency_key,
+                    ttl_seconds=min(msg.requested_ttl_seconds, policy.max_hold_seconds))
+                reply = (HoldConfirmed(**base, hold_id=out.hold_id, offer_id=msg.offer_id, sailing_id=out.sailing_id,
+                                       quantity=out.quantity, expires_at=out.expires_at, replay=out.replay)
+                         if out.ok else
+                         HoldRejected(**base, offer_id=msg.offer_id, code=out.code, detail=out.detail))
+        except Exception as exc:
+            log.exception("hold failed")
+            reply = AgentError(**base, error_code=ErrorCode.INTERNAL_ERROR, detail=type(exc).__name__)
+        await _send(ctx, sender, reply, msg, "request_hold_handled", started)
+
+    @protocol.on_message(model=ReleaseHold, replies={HoldReleased, AgentError})
+    async def on_release_hold(ctx: Context, sender: str, msg: ReleaseHold) -> None:
+        started, now = time.perf_counter(), _now()
+        base = reply_base(msg, carrier_id=carrier_id, carrier_address=agent.address, now=now)
+        try:
+            err = envelope_precheck(msg, sender=sender, allowed_requesters=allowed_requesters, now=now)
+            if err:
+                reply = AgentError(**base, **err)
+            else:
+                out = await holds.release_hold(inventory.pool, carrier_id, hold_id=msg.hold_id)
+                reply = (HoldReleased(**base, hold_id=msg.hold_id, final_status=out.code.removeprefix("HOLD_"))
+                         if out.ok else AgentError(**base, error_code=ErrorCode.MALFORMED_REQUEST, detail=out.code))
+        except Exception as exc:
+            log.exception("release failed")
+            reply = AgentError(**base, error_code=ErrorCode.INTERNAL_ERROR, detail=type(exc).__name__)
+        await _send(ctx, sender, reply, msg, "release_hold_handled", started)
+
+    @protocol.on_message(model=ConfirmBooking, replies={BookingConfirmed, BookingRejected, AgentError})
+    async def on_confirm_booking(ctx: Context, sender: str, msg: ConfirmBooking) -> None:
+        started, now = time.perf_counter(), _now()
+        base = reply_base(msg, carrier_id=carrier_id, carrier_address=agent.address, now=now)
+        try:
+            err = envelope_precheck(msg, sender=sender, allowed_requesters=allowed_requesters, now=now)
+            if err:
+                reply = AgentError(**base, **err)
+            else:
+                policy = await inventory.policy()
+                out = await holds.confirm_booking(
+                    inventory.pool, carrier_id, hold_id=msg.hold_id, payment_reference=msg.payment_reference,
+                    idempotency_key=msg.idempotency_key, intent_id=msg.intent_id,
+                    claim_code_hash=msg.claim_code_hash, payment_terms=policy.payment_terms)
+                reply = (BookingConfirmed(**base, booking_id=out.booking_id, hold_id=msg.hold_id,
+                                          confirmed_at=out.confirmed_at, payment_terms=policy.payment_terms,
+                                          replay=out.replay)
+                         if out.ok else BookingRejected(**base, hold_id=msg.hold_id, code=out.code, detail=out.detail))
+        except Exception as exc:
+            log.exception("confirm failed")
+            reply = AgentError(**base, error_code=ErrorCode.INTERNAL_ERROR, detail=type(exc).__name__)
+        await _send(ctx, sender, reply, msg, "confirm_booking_handled", started)
 
     agent.include(protocol, publish_manifest=False)
     return agent

@@ -37,7 +37,7 @@ def test_reply_shows_withdrawal_disrupted_booking_and_no_false_recovery():
 
 def test_reply_when_nothing_is_withdrawn():
     text = r.disruption_status_reply([], [])
-    assert "No sailings have been withdrawn" in text and "no bookings on record" in text
+    assert "No sailings have been withdrawn" in text and "no bookings on record yet" in text
     assert "rebooked" not in text
 
 
