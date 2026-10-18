@@ -1,8 +1,9 @@
 """First-come-first-served comparison (v2 BASE-1): a pure simulation, never executed.
 
 Same final offers and the same claim-checked capacity snapshot as the solver. Bookings take turns in
-posting order (then booking id); each grabs its own best feasible offer by its buyer priority (price plus
-an arrival penalty) from a COPY of the capacity, so the comparison shows what greedy booking would have
+posting order (then booking id); each grabs its own best single offer covering the whole shipment by its
+buyer priority (price plus an arrival penalty), splitting greedily only when none exists, from a COPY of
+the capacity, so the comparison shows what greedy booking would have
 achieved. Tiger slots, holds and approvals are never touched.
 """
 
@@ -36,10 +37,18 @@ def first_come_first_served(stranded: list[DisruptedBooking], offers: list[Recov
             return (o.unit_price_minor * b.quantity + per_day * days, o.arrival_at, o.offer_id)
 
         usable = sorted((o for o in offers if ineligibility(b, o, as_of) is None), key=rank)
+        whole = [o for o in usable if min(offer_left[o.offer_id], sailing_left[o.sailing_id]) >= b.quantity
+                 and (not o.exact_quantity or o.capacity_units == b.quantity)]
+        if whole:  # a greedy buyer books one sailing for the whole shipment when one is available
+            usable = [whole[0]]
         need, plan = b.quantity, []
         for o in usable:
             room = min(offer_left[o.offer_id], sailing_left[o.sailing_id])
-            take = min(room, need) if b.allow_split else (need if room >= need else 0)
+            if o.exact_quantity:  # negotiated price is valid only for the whole offer
+                size = o.capacity_units
+                take = size if room >= size and (size == need or (b.allow_split and size < need)) else 0
+            else:
+                take = min(room, need) if b.allow_split else (need if room >= need else 0)
             if take:
                 plan.append((o, take))
                 need -= take

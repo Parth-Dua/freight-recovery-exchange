@@ -105,9 +105,9 @@ class StripeTestPayments:
                            "product_data": {"name": name, "description": desc}},
             "quantity": 1,
         }
-        items = [line("Simulated ocean freight (TEST)", freight_label, freight_minor)]
+        items = [line("Ocean freight", freight_label, freight_minor)]
         if fee_minor:
-            items.append(line("Booking service fee (TEST)", "Hormuz Exchange booking service fee", fee_minor))
+            items.append(line("Booking service fee", "Hormuz Exchange booking service fee", fee_minor))
         metadata = {"intent_id": intent_id, "request_id": request_id, "offer_id": offer_id, "environment": "test"}
         if reference:
             metadata["payment_reference"] = reference

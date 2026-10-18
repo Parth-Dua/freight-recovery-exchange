@@ -23,6 +23,7 @@ from freight_exchange import cards
 from freight_exchange.booking import claim_code, claim_hash, hold_ttl_seconds
 from freight_exchange.carrier_client import CarrierRef
 from freight_exchange.gateway_service import fet_amount, text, to_atestfet
+from freight_exchange.observability import log_event
 from freight_exchange.payments import (
     PAYMENT_PENDING, PAYMENT_VERIFIED_TEST, Expected, StripeTestPayments, booking_fee_minor, classify_session)
 from freight_exchange.repository import _event
@@ -144,12 +145,11 @@ class FetBookingService:
     def _payment_request(reference: str, amount: Decimal, gateway_wallet: str, deadline: datetime) -> dict:
         seconds = max(60, int((deadline - datetime.now(timezone.utc)).total_seconds()))
         return {"kind": "PAYMENT_REQUEST",
-                "narration": (f"The carrier is holding your space. Please pay the {amount} testnet FET "
-                              "booking-coordination fee to confirm (simulated freight is not charged)."),
+                "narration": (f"The carrier is holding your space. Please pay the {amount} FET "
+                              "booking-coordination fee to confirm."),
                 "payment": {"reference": reference, "amount": str(amount), "currency": "FET", "method": "fet_direct",
                             "recipient": gateway_wallet, "deadline_seconds": seconds,
-                            "description": (f"Hormuz Exchange booking-coordination service: {amount} testnet FET. "
-                                            "Demo payment; no real freight is bought."),
+                            "description": f"Hormuz Exchange booking-coordination service: {amount} FET.",
                             "metadata": {"fet_network": NETWORK, "provider_agent_wallet": gateway_wallet,
                                          "service": "booking_coordination"}}}
 
@@ -219,10 +219,9 @@ class FetBookingService:
                         hosted_url: str | None, deadline: datetime, carrier: str) -> dict:
         seconds = max(60, int((deadline - datetime.now(timezone.utc)).total_seconds()))
         narration = (f"{carrier} is holding your space until {deadline.strftime('%H:%M')} UTC. "
-                     f"Pay {money(total, currency)} by card to confirm. Stripe TEST mode, so no real money moves: "
-                     f"use card {TEST_CARD}, any future expiry date and any CVC.")
+                     f"Pay {money(total, currency)} by card to confirm your booking.")
         if hosted_url:
-            narration += f"\n\nIf no payment card appears here, pay at this secure Stripe link instead:\n{hosted_url}"
+            narration += f"\n\nIf the payment form doesn't appear, pay securely with Stripe here:\n{hosted_url}"
         stripe_meta = {"ui_mode": "embedded", "publishable_key": os.getenv("STRIPE_TEST_PUBLISHABLE", ""),
                        "checkout_session_id": session_id, "currency": currency.lower(), "amount_cents": str(total)}
         if client_secret:
@@ -233,8 +232,8 @@ class FetBookingService:
         return {"kind": "PAYMENT_REQUEST", "narration": narration,
                 "payment": {"reference": reference, "amount": f"{total / 100:.2f}", "currency": currency,
                             "method": "stripe", "recipient": "", "deadline_seconds": seconds,
-                            "description": (f"Hormuz Exchange booking: {money(total, currency)} (simulated freight + "
-                                            "booking service fee). Stripe TEST mode; no real money moves."),
+                            "description": (f"Hormuz Exchange booking: {money(total, currency)} "
+                                            "(ocean freight + booking service fee)."),
                             "metadata": metadata}}
 
     async def _stripe_request_again(self, row: dict, intent: dict) -> dict:
@@ -248,26 +247,34 @@ class FetBookingService:
         return self._stripe_request(row["reference"], int(row["amount_minor"]), row["currency"], embedded_id or "",
                                     secret, row["checkout_url"], row["deadline_at"], intent["display_name"])
 
+    async def _stripe_row_for(self, env: dict) -> dict | None:
+        """The card payment a commit refers to: by Stripe session id, else the open one in that chat."""
+        tx = (env.get("transaction_id") or "").strip()
+        async with self.repo.pool.connection() as conn:
+            cur = await conn.execute(
+                """SELECT * FROM payment_records WHERE provider = 'stripe'
+                     AND ((%s <> '' AND %s = ANY(stripe_session_ids))
+                          OR (chat_session_id = %s AND status IN ('REQUESTED', 'COMMIT_RECEIVED')))
+                   ORDER BY (%s <> '' AND %s = ANY(stripe_session_ids)) DESC, created_at DESC LIMIT 1""",
+                (tx, tx, env.get("chat_session_id") or "", tx, tx))
+            row = await cur.fetchone()
+            return dict(zip([c.name for c in cur.description], row)) if row else None
+
     async def _commit_stripe(self, row: dict, env: dict) -> dict:
+        if row["status"] == "VERIFIED":
+            return await self._completed(row)
+        if row["status"] not in ("REQUESTED", "COMMIT_RECEIVED"):
+            return {"action": "none", "followups": []}
         session_id = (env.get("transaction_id") or "").strip()
         funds = env.get("funds") or {}
         if funds.get("payment_method") not in (None, "", "stripe"):
-            return {"action": "cancel", "transaction_id": session_id or None, "reason": "wrong payment method",
-                    "followups": [text("That payment used a different method than the one I requested; nothing was "
-                                       "booked. Please pay with the Stripe card form or link.")]}
-        if session_id not in (row["stripe_session_ids"] or []):
-            settled = await self.check_stripe(row)  # the client may report a different id; Stripe is the truth
-            if settled is not None:
-                return settled
-            return {"action": "none", "followups": [text(
-                "I could not match that payment to your checkout yet; I'll keep checking with Stripe and post the "
-                "confirmation here once it's paid.")]}
-        settled = await self._settle_stripe(row, session_id, attempts=4)
-        if settled is not None:
-            return settled
-        return {"action": "none", "followups": [text(
-            "Stripe hasn't confirmed the payment yet. I'll keep checking and post your booking confirmation here "
-            "as soon as it clears; your space stays held meanwhile.")]}
+            return {"action": "none", "followups": []}  # not our card rail; the open checkout stays valid
+        if session_id in (row["stripe_session_ids"] or []):
+            settled = await self._settle_stripe(row, session_id, attempts=4)
+        else:
+            settled = await self.check_stripe(row)  # the client may report another id; Stripe is the truth
+        # Not cleared yet (a card payment can take ~a minute): stay quiet; the poller posts the confirmation.
+        return settled if settled is not None else {"action": "none", "followups": []}
 
     async def check_stripe(self, row: dict) -> dict | None:
         """Settle from whichever session (embedded or hosted) Stripe reports as paid; None if neither is paid."""
@@ -331,7 +338,7 @@ class FetBookingService:
         receipt = await self._confirm(row["intent_id"], payment_reference=row["reference"], hold_id=intent["hold_id"],
                                       hold_expires_at=intent["hold_expires_at"],
                                       payment_line=f"{money(int(row['amount_minor']), row['currency'])} paid by card "
-                                                   "(Stripe TEST mode, verified with Stripe)",
+                                                   "(verified with Stripe)",
                                       already_held=True)
         return {"action": "complete", "transaction_id": session_id, "chat_session_id": row["chat_session_id"],
                 "followups": [receipt]}
@@ -384,14 +391,25 @@ class FetBookingService:
         tx = (env.get("transaction_id") or "").strip()
         meta = env.get("metadata") or {}
         wallet = (meta.get("buyer_fet_wallet") or meta.get("buyer_fet_address") or "").strip()
+        log_event("payment_commit_received", reference=(env.get("reference") or "")[:40], tx=tx[:20],
+                  sender=(env.get("sender_agent_address") or "")[:24], session=(env.get("chat_session_id") or "")[:12],
+                  method=(env.get("funds") or {}).get("payment_method"), matched=row is not None,
+                  sender_matches=bool(row) and row["sender_agent_address"] == env.get("sender_agent_address"))
         if row is None or row["sender_agent_address"] != env.get("sender_agent_address"):
+            # The client may echo a different reference or relay from another address. For card payments
+            # that is harmless: a commit only triggers a Stripe check, and results go to the payer's own chat.
+            card = await self._stripe_row_for(env)
+            if card is not None:
+                return await self._commit_stripe(card, env)
+            if payment_mode() == "stripe_test":
+                return {"action": "none", "followups": []}  # unknown claim: ignore quietly, never "failed"
             return self._cancel(tx, "This payment isn't one I requested from you; nothing was booked.")
         if row["status"] == "VERIFIED":  # duplicate commit: same answer, no second booking
             return await self._completed(row)
-        if row["status"] not in ("REQUESTED", "COMMIT_RECEIVED"):
-            return self._cancel(tx, f"This payment is already {row['status'].lower()}; nothing new was booked.")
         if row["provider"] == "stripe":
             return await self._commit_stripe(row, env)
+        if row["status"] not in ("REQUESTED", "COMMIT_RECEIVED"):
+            return self._cancel(tx, f"This payment is already {row['status'].lower()}; nothing new was booked.")
         problem = None
         funds = env.get("funds") or {}
         if row["deadline_at"] <= datetime.now(timezone.utc):

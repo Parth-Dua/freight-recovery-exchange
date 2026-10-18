@@ -84,3 +84,30 @@ def test_indivisible_booking_never_split_across_single_slots():
     assert placed(solution) == {} and solution.unrecovered_booking_ids == ("B",)
     base = first_come_first_served([b], offers, check_claims(offers, {"S1": 1, "S2": 1}), AS_OF)
     assert base["recovered"] == 0
+
+
+def test_exact_quantity_offer_is_taken_whole_or_not_at_all():
+    """Live regression (rec_1556a0179ff8): a 2-unit negotiated offer must not be half-used."""
+    from datetime import datetime, timedelta, timezone
+
+    from freight_allocation.baseline import first_come_first_served
+    from freight_allocation.model import solve
+    from freight_allocation.verify import check_claims
+    from freight_seams import DisruptedBooking, RecoveryOffer
+
+    now = datetime(2026, 10, 18, 8, 44, tzinfo=timezone.utc)
+    b = DisruptedBooking(booking_id="BK-1", buyer_id="buyer", carrier_id="cove", sailing_id="COV-OLD",
+                         origin_port="AEJEA", destination_port="INBOM", container_type="20GP", quantity=2,
+                         latest_arrival=now + timedelta(days=6), allow_split=True, original_price_minor=471000,
+                         max_additional_cost_minor=60000, currency="USD")
+    mk = lambda oid, sid, units, total: RecoveryOffer(  # noqa: E731
+        offer_id=oid, carrier_id=oid.split("_")[1], sailing_id=sid, capacity_units=units, total_price_minor=total,
+        currency="USD", arrival_at=now + timedelta(days=4), expires_at=now + timedelta(hours=1),
+        eligible_booking_ids=("BK-1",), exact_quantity=True)
+    offers = [mk("off_cove_1", "COV-301", 1, 278000), mk("off_atlas_2", "ATL-102", 2, 592000)]
+    checks = check_claims(offers, {"COV-301": 5, "ATL-102": 5})
+    sol = solve([b], offers, checks, now)
+    assert [(a.offer_id, a.quantity) for a in sol.assignments] == [("off_atlas_2", 2)]
+    base = first_come_first_served([b], offers, checks, now)
+    assert all(leg["quantity"] in (1, 2) for leg in base["assignments"]["BK-1"])
+    assert base["assignments"]["BK-1"] == [{"offer_id": "off_atlas_2", "sailing_id": "ATL-102", "quantity": 2}]

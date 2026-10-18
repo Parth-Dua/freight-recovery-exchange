@@ -35,8 +35,8 @@ ROUTE_RECOVERY = "disruption_status"
 ROUTE_UNSUPPORTED = "unsupported"
 
 STATUS_LINE = (
-    "Demo market: fictional carriers and simulated inventory. Payments run in Stripe TEST mode only "
-    "(no real money). If a carrier withdraws a sailing, affected bookings are recovered automatically and "
+    "Payments are taken by card through Stripe. If a carrier withdraws a sailing, affected bookings are "
+    "recovered automatically and "
     "shown as rebooked only after the new carrier confirms."
 )
 EXAMPLE_PROMPT = '"Quote 2x20GP from Jebel Ali to Mumbai, arrive by Oct 23, budget $5,600, don\'t split"'
@@ -345,7 +345,7 @@ def booking_reply(step) -> str:
             f"**Hold placed** — {i['display_name']} is holding {i['quantity']}× {i['container_type']} on sailing "
             f"{i['sailing_id']} for you until **{i['hold_expires_at']:%H:%M} UTC**.\n"
             f"Pay in **Stripe TEST mode** (no real money): {step.checkout_url}\n"
-            f"- Simulated ocean freight: {money(i['freight_minor'], i['currency'])}\n"
+            f"- Ocean freight: {money(i['freight_minor'], i['currency'])}\n"
             f"- Booking service fee: {money(i['fee_minor'], i['currency'])}\n"
             f"- **Total: {money(i['freight_minor'] + i['fee_minor'], i['currency'])}**\n"
             f"Use Stripe's test card {TEST_CARD}.\n"
@@ -376,7 +376,7 @@ def booking_reply(step) -> str:
             f"- Sailing {i['sailing_id']} · {i['quantity']}× {i['container_type']} · "
             f"{i['origin_port']} → {i['destination_port']} · departs {when(i['departure_at'])} → arrives "
             f"{when(i['arrival_at'])} UTC\n"
-            f"- Paid in Stripe TEST mode: simulated freight {money(i['freight_minor'], i['currency'])} + booking fee "
+            f"- Paid by card: freight {money(i['freight_minor'], i['currency'])} + booking fee "
             f"{money(i['fee_minor'], i['currency'])} = **{money(i['freight_minor'] + i['fee_minor'], i['currency'])}**\n"
             f"- Freight payment terms: {i.get('payment_terms') or 'per carrier terms'}\n"
             f"- Recovery: {_allowance(i.get('max_additional_cost_minor') or 0)}\n"

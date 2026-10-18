@@ -10,6 +10,8 @@ Variables
 Rules (docs/specs/06-joint-recovery-allocation.md)
     - all or nothing:     sum over o of y[b, o] = quantity(b) * r[b]
     - offer capacity:     sum over b of y[b, o] <= units trusted for o  (claim checked)
+    - exact offers:       a negotiated offer (exact_quantity) is taken whole or not at all, because its
+                          price is only valid for that quantity
     - sailing capacity:   offers on the same sailing share its sellable slots
     - never late, never an expired or foreign-currency offer, only offers made for b
     - price over the approved extra cost is allowed but marks a[b] for approval
@@ -115,7 +117,11 @@ def solve(
             if trusted <= 0 or ineligibility(booking, offer, as_of) is not None:
                 continue
             key = (booking.booking_id, offer.offer_id)
-            if booking.allow_split:
+            if offer.exact_quantity:  # negotiated price: whole offer or nothing
+                size = offer.capacity_units
+                if trusted >= size and (size == booking.quantity or (booking.allow_split and size < booking.quantity)):
+                    placed[key] = size * model.new_bool_var(f"x_{key[0]}_{key[1]}")
+            elif booking.allow_split:
                 placed[key] = model.new_int_var(0, min(booking.quantity, trusted), f"y_{key[0]}_{key[1]}")
             elif trusted >= booking.quantity:
                 choose = model.new_bool_var(f"x_{key[0]}_{key[1]}")

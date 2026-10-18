@@ -117,7 +117,7 @@ class RecoveryNegotiator:
                 offers.append(RecoveryOffer(offer_id=o.offer_id, carrier_id=s.carrier.carrier_id, sailing_id=o.sailing_id,
                                             capacity_units=o.quantity, total_price_minor=o.total_price_minor,
                                             currency=o.currency, arrival_at=o.arrival_at, expires_at=o.expires_at,
-                                            eligible_booking_ids=(b.booking_id,)))
+                                            eligible_booking_ids=(b.booking_id,), exact_quantity=True))
                 sources[o.offer_id] = NegotiatedSource(o, b.booking_id, s.request.request_id, s.session_id)
         summary = NegotiationSummary(sessions=sum(len(g[1]) for g in groups), finals=len(offers), expired=expired,
                                      elapsed_s=round((now - started).total_seconds(), 1),

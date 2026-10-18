@@ -49,10 +49,12 @@ class GatewayRecoveryNotifier:
                 continue
             notice = m.cancellation_notice(b, context)
             await self._push(b, bound[b.booking_id], f"cancel:{withdrawal_event_id}:{b.booking_id}", cards.status_detail(
-                f"Sailing {sailing_id} withdrawn", [
-                    ("Your booking", b.booking_id), ("Status", "DISRUPTED — recovery running"),
+                f"⚠️ Sailing {sailing_id} cancelled", [
+                    ("Your booking", b.booking_id), ("Status", "DISRUPTED — negotiating replacement space"),
                     ("Carrier", context.carrier_name), ("Deadline", b.latest_arrival.strftime("%b %-d, %H:%M UTC")),
-                    ("Note", "Simulated disruption; nothing new is booked or charged without telling you.")], notice))
+                    ("Note", "Nothing new is booked or charged without telling you.")],
+                f"⚠️ SAILING CANCELLATION ALERT\nTrying to negotiate alternate sailings for {b.booking_id} now.\n\n"
+                + notice))
 
     async def update(self, *, recovery_run_id, stranded, proposal: RecoveryProposal,
                      outcome: RecoveryOutcome | None) -> None:
@@ -82,7 +84,7 @@ class GatewayRecoveryNotifier:
                     narration=narration, rows=[
                         ("Replacement", ", ".join(f"{names.get(a.carrier_id, a.carrier_id)} {a.sailing_id}" for a in plan)),
                         ("Arrives", max(a.arrival_at for a in plan).strftime("%b %-d, %H:%M UTC") if plan else "-"),
-                        ("New simulated freight", m.money(new_total, booking.currency)),
+                        ("New freight", m.money(new_total, booking.currency)),
                         ("Was", m.money(booking.original_price_minor, booking.currency)),
                         ("Extra vs your auto-rebook limit",
                          f"{m.money(new_total - booking.original_price_minor, booking.currency)} vs "
@@ -102,4 +104,7 @@ class GatewayRecoveryNotifier:
                 result = cards.status_detail("Not recovered", [("Booking", booking.booking_id),
                                                                ("Status", "UNRECOVERED — nothing new booked or charged")],
                                              narration)
+            headline = {m.NEEDS_APPROVAL: "🔔 ACTION NEEDED: approve your replacement sailing",
+                        m.REBOOKED: "✅ REBOOKED: your cargo has a new sailing"}.get(kind, "❌ RECOVERY UPDATE")
+            result = {**result, "narration": f"{headline}\n\n{result['narration']}"}
             await self._push(booking, binding, key, result)

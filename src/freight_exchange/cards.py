@@ -48,13 +48,13 @@ def cargo_setup_form(*, origins: list[tuple[str, str]], destinations: list[tuple
         {"name": "allow_split", "kind": "checkbox", "label": "Allow split across sailings"},
         {"name": "cargo_class", "kind": "select", "label": "Cargo class",
          "options": [{"value": "general", "label": "General"}, {"value": "high_value", "label": "High value"}]},
-        {"name": "max_total_price", "kind": "number", "label": "Max simulated freight (USD, private to you)"},
+        {"name": "max_total_price", "kind": "number", "label": "Max freight budget (USD, private to you)"},
         {"name": "priority", "kind": "select", "label": "Negotiation priority",
          "options": [{"value": "balanced", "label": "Balanced"}, {"value": "cheapest", "label": "Cheapest"},
                      {"value": "fastest", "label": "Fastest"}]},
         {"name": "must_deliver", "kind": "checkbox", "label": "Must deliver (priority if a sailing is cancelled)"},
         {"name": "recovery_allowance", "kind": "number",
-         "label": "Auto-rebook extra cost limit (simulated USD, 0 = always ask me)"},
+         "label": "Auto-rebook extra cost limit (USD, 0 = always ask me)"},
     ]
     payload = {"title": "Set up your cargo shipment", "fields": fields,
                "submit_cta": {"label": "Find shipping offers",
@@ -107,7 +107,7 @@ def final_offers_carousel(*, request_id: str, offers: list[dict], card_instance_
         f"{_when(o['arrival_at'])}" for o in offers) + "\nReply 'select <offer id>' to choose."
     return result(header, "carousel", {
         "title": "Your offers",
-        "subtitle": f"Simulated freight (USD, times UTC) · valid until {valid.strftime('%H:%M')} UTC",
+        "subtitle": f"All-in ocean freight in USD · times in UTC · valid until {valid.strftime('%H:%M')} UTC",
         "items": items}, fallback=fallback)
 
 
@@ -123,19 +123,18 @@ def booking_review(*, request_id: str, offer: dict, fee_fet: Decimal | None, car
     ]
     if stripe_fee_minor is not None:
         total = freight + stripe_fee_minor
-        rows += [{"label": "Simulated freight", "value": money(freight)},
+        rows += [{"label": "Ocean freight", "value": money(freight)},
                  {"label": "Booking service fee", "value": money(stripe_fee_minor)},
-                 {"label": "Total by card", "value": f"{money(total)} (Stripe TEST mode, no real money)"}]
+                 {"label": "Total, paid by card", "value": money(total)}]
         pay_label = f"Confirm and pay {money(total)}"
-        narration = (f"{offer['display_name']} {offer['sailing_id']}: {money(total)} by card "
-                     "(Stripe TEST mode, no real money moves).")
+        narration = f"{offer['display_name']} {offer['sailing_id']}: {money(total)} total, paid by card."
     else:
-        rows.append({"label": "Carrier freight quote", "value": f"{money(freight)} USD — simulated, not charged"})
+        rows.append({"label": "Ocean freight", "value": f"{money(freight)} USD"})
         if fee_fet is not None:
             rows.append({"label": "Booking coordination service",
-                         "value": f"{fee_fet} testnet FET — demonstration payment via Fetch"})
+                         "value": f"{fee_fet} FET via Fetch"})
         pay_label = "Confirm and pay" if fee_fet is not None else "Confirm (dev mode)"
-        narration = (f"{offer['display_name']} {offer['sailing_id']}: {money(freight)} simulated freight"
+        narration = (f"{offer['display_name']} {offer['sailing_id']}: {money(freight)} ocean freight"
                      + (f", plus a {fee_fet} testnet FET booking-coordination fee." if fee_fet is not None else "."))
     rows.append({"label": "Offer valid until", "value": _when(offer["expires_at"])})
     base = {"request_id": request_id, "offer_id": offer["offer_id"], "card_instance_id": card_instance_id}
@@ -152,7 +151,7 @@ def booking_receipt(*, booking_id: str, claim_code: str, offer: dict, payment_li
         {"label": "Carrier / sailing", "value": f"{offer['display_name']} · {offer['sailing_id']}"},
         {"label": "Route", "value": f"{offer['origin_port']} → {offer['destination_port']}, {offer['quantity']}×20GP"},
         {"label": "Arrives", "value": _when(offer["arrival_at"])},
-        {"label": "Simulated freight", "value": money(offer["total_price_minor"])},
+        {"label": "Ocean freight", "value": money(offer["total_price_minor"])},
         {"label": "Payment", "value": payment_line},
     ]
     narration = f"Booked: {booking_id}, confirmed by {offer['display_name']}. Claim code {claim_code}."

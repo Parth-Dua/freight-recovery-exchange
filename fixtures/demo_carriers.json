@@ -102,7 +102,7 @@
   "carriers": [
     {
       "carrier_id": "atlas",
-      "display_name": "Atlas Lines (fictional)",
+      "display_name": "Atlas Lines",
       "port": 8101,
       "policy": {
         "currency": "USD",
@@ -112,7 +112,7 @@
         "offer_ttl_seconds": 600,
         "selection": "earliest_arrival",
         "concession_pct": 10,
-        "payment_terms": "Freight prepaid to Atlas before departure (simulated)",
+        "payment_terms": "Freight prepaid to Atlas before departure",
         "max_hold_seconds": 3600,
         "business_goal": "fill_ship",
         "concession_empty_pct": 12,
@@ -208,7 +208,7 @@
     },
     {
       "carrier_id": "beacon",
-      "display_name": "Beacon Maritime (fictional)",
+      "display_name": "Beacon Maritime",
       "port": 8102,
       "policy": {
         "currency": "USD",
@@ -218,7 +218,7 @@
         "offer_ttl_seconds": 600,
         "selection": "earliest_arrival",
         "concession_pct": 4,
-        "payment_terms": "Freight prepaid to Beacon before departure (simulated)",
+        "payment_terms": "Freight prepaid to Beacon before departure",
         "max_hold_seconds": 3600,
         "business_goal": "protect_margin",
         "concession_empty_pct": 6,
@@ -314,7 +314,7 @@
     },
     {
       "carrier_id": "cove",
-      "display_name": "Cove Shipping (fictional)",
+      "display_name": "Cove Shipping",
       "port": 8103,
       "policy": {
         "currency": "USD",
@@ -324,7 +324,7 @@
         "offer_ttl_seconds": 600,
         "selection": "earliest_departure",
         "concession_pct": 3,
-        "payment_terms": "Freight collect: payable to Cove at Mumbai before release (simulated)",
+        "payment_terms": "Freight collect: payable to Cove at Mumbai before release",
         "max_hold_seconds": 3600,
         "business_goal": "balanced",
         "concession_empty_pct": 8,
@@ -420,7 +420,7 @@
     },
     {
       "carrier_id": "meridian",
-      "display_name": "Meridian Container Line (fictional)",
+      "display_name": "Meridian Container Line",
       "port": 8104,
       "policy": {
         "currency": "USD",
@@ -430,7 +430,7 @@
         "offer_ttl_seconds": 600,
         "selection": "earliest_arrival",
         "concession_pct": 6,
-        "payment_terms": "Freight prepaid to Meridian, 50% at booking and 50% before departure (simulated)",
+        "payment_terms": "Freight prepaid to Meridian, 50% at booking and 50% before departure",
         "max_hold_seconds": 3600,
         "business_goal": "protect_margin",
         "concession_empty_pct": 5,
@@ -513,7 +513,7 @@
     },
     {
       "carrier_id": "dhow",
-      "display_name": "Dhow Feeder Lines (fictional)",
+      "display_name": "Dhow Feeder Lines",
       "port": 8105,
       "policy": {
         "currency": "USD",
@@ -523,7 +523,7 @@
         "offer_ttl_seconds": 600,
         "selection": "earliest_departure",
         "concession_pct": 12,
-        "payment_terms": "Freight collect: payable to Dhow at destination before release (simulated)",
+        "payment_terms": "Freight collect: payable to Dhow at destination before release",
         "max_hold_seconds": 3600,
         "business_goal": "fill_ship",
         "concession_empty_pct": 14,

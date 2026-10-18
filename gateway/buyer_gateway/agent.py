@@ -44,8 +44,7 @@ def build_gateway(*, seed: str, port: int, backend: BackendClient, name: str = "
     agent = Agent(name=name, seed=seed, port=port, mailbox=True, publish_agent_details=True,
                   description=("Hormuz Exchange (demo): ship cargo with independent carrier agents. Native "
                                "cards for quotes and booking, Fetch payment for the booking-coordination "
-                               "service, and automatic rebooking when a carrier withdraws a sailing. "
-                               "Fictional market; testnet payments only."),
+                               "service, and automatic rebooking when a carrier withdraws a sailing."),
                   readme_path=str(README) if README.exists() else None)
     chat = Protocol(spec=chat_protocol_spec)
     payment = Protocol(spec=payment_protocol_spec, role="seller")

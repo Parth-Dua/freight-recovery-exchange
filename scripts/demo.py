@@ -32,8 +32,8 @@ load_dotenv(ROOT / ".env")
 from freight_exchange.repository import get_repository  # noqa: E402
 
 FIXTURE_CARRIERS = {c["carrier_id"] for c in json.loads((ROOT / "fixtures" / "demo_carriers.json").read_text())["carriers"]}
-SIMULATED_REASON = ("SIMULATED advisory for the demo (risk_sim_0001): the carrier withdrew this sailing. "
-                    "Fictional carriers and schedules; not a real vessel or route.")
+SIMULATED_REASON = ("Security incident reported in the transit corridor (advisory risk_sim_0001). "
+                    "The carrier withdrew this sailing.")
 PRESEED = """
 import asyncio, json, sys
 from carrier_console.config import load_env
@@ -79,10 +79,16 @@ async def reset(repo, anchor: str | None = None) -> None:
           .strip().splitlines()[-1])
 
 
+BUYER_B_ALLOWANCE_MINOR = 30000  # $300
+
+
 async def seed(repo, extra: list[dict] | None = None) -> list[dict]:
     """Buyer B on the first departure (ATL-101) and Buyer C on the last, through the console's preseed service."""
     await guard_demo_database(repo)
     print(sh("uv", "run", "--directory", "console", "python", "-m", "carrier_console.preseed_cli").strip())
+    async with repo.pool.connection() as conn:  # B auto-rebooks a small increase; live Buyer A sees the approval card
+        await conn.execute("UPDATE bookings SET max_additional_cost_minor = %s WHERE buyer_id = 'buyer_b'",
+                           (BUYER_B_ALLOWANCE_MINOR,))
     made = []
     if extra:
         out = sh("uv", "run", "--directory", "console", "python", "-c", PRESEED, json.dumps(extra))
@@ -96,8 +102,8 @@ async def seed(repo, extra: list[dict] | None = None) -> list[dict]:
         by = (arrival + timedelta(days=2)).strftime("%b %-d")   # same slack Buyer B was seeded with
         print("\nBuyer A, live in ASI:One with the Hormuz Exchange gateway agent:\n"
               "  say 'I need to ship cargo' -> form: Jebel Ali -> Mumbai, 2 containers, arrive no later than "
-              f"{by}, auto-rebook limit 600 -> choose the Atlas ATL-101 offer -> Confirm and pay (0.1 testnet FET).\n"
-              "  Then withdraw ATL-101 at http://localhost:8800 to watch the joint recovery reach your chat.")
+              f"{by}, no split, auto-rebook limit 600 -> choose the Atlas ATL-101 offer -> Confirm and pay by card.\n"
+              "  Then withdraw ATL-101 at http://localhost:8800: B auto-rebooks, you get an approval card.")
     return made
 
 
@@ -277,8 +283,8 @@ async def rehearse(repo, runs: int) -> bool:
         print(f"\n######## rehearsal {n}/{runs}")
         await reset(repo)
         [stand_in] = await seed(repo, extra=[{"buyer": "rehearsal_buyer_a", "sailing": "ATL-101", "qty": 2, "split": False}])
-        async with repo.pool.connection() as conn:   # "auto-rebook up to $600" as Buyer A would say at booking
-            await conn.execute("UPDATE bookings SET max_additional_cost_minor = 60000 WHERE booking_id = %s",
+        async with repo.pool.connection() as conn:   # "auto-rebook up to $2,000": the fully automatic path
+            await conn.execute("UPDATE bookings SET max_additional_cost_minor = 200000 WHERE booking_id = %s",
                                (stand_in["booking_id"],))
             before = dict(await (await conn.execute("SELECT buyer_id, booking_id FROM bookings")).fetchall())
         await withdraw(repo, "ATL-101")

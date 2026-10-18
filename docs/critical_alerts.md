@@ -22,22 +22,20 @@ Updated as the v2 phases (`docs/specs_2/`) progress. Only things that need **you
 3. **Submission (only you can):** Devpost + ASI:One Submission Agent, a 3–5 min video, and a shared ASI:One
    chat URL. README already has the badges, agent addresses and setup.
 
-## Test it (≈5 min)
+## Test it — the demo script (≈5 min)
 
-Services: `./scripts/run_demo.sh` (already running from my session). Gateway:
-`agent1q0ktnrhtmerdle6tz9lmdj9v7c0vzrtnl8wdvuthj88cj9ydp7j3vmymxm8`.
+Before each take: `uv run python scripts/demo.py reset && uv run python scripts/demo.py seed` (Buyer B: 1 container on
+ATL-101, $300 auto-rebook limit; Buyer C: DHW-571, unaffected). Services: `./scripts/run_demo.sh`.
 
-**A. Book (ASI:One, new chat with the gateway — `@freight-disruption`):**
-1. `@freight-disruption I need to ship cargo` → form card. Jebel Ali → Mumbai, 2 containers, arrive-by 3–4 days out,
-   auto-rebook limit e.g. 300. Submit.
-2. ~20–40 s later an offers **carousel** (with each carrier's negotiation trace) appears. Choose one.
-3. **Review** card → **Confirm and pay $X** → pay by card in the in-chat Stripe form, or via the Stripe link
-   posted in the chat if no form appears (test card 4242 4242 4242 4242) → within ~5 s a **Booking confirmed** card.
-
-**B. Disrupt + recover (same chat stays open):**
-4. Withdraw your sailing at http://localhost:8800 (or `uv run python scripts/demo.py withdraw <SAILING>`).
-5. Within ~1 min: a **disruption** card, then either a **Rebooked** card or an **approval** card (approve it)
-   followed by **Rebooked**. Other buyers on that sailing are recovered in the same joint clearing.
+1. ASI:One, new chat: `@freight-disruption I need to ship cargo` → form: Jebel Ali → Mumbai, **2**, arrive no
+   later than **Oct 23** (the date `seed` prints), cargo ready Any time, split **off**, General, budget blank,
+   Balanced, must-deliver optional, auto-rebook limit **600**.
+2. Carousel: Atlas ATL-101 and Beacon BEA-201 (Cove has 1 slot, Meridian arrives too late). Choose **Atlas ATL-101**.
+3. Review → **Confirm and pay** → card `4242 4242 4242 4242` → **Booking confirmed** card.
+4. Withdraw **ATL-101** at http://localhost:8800 → ⚠️ SAILING CANCELLATION ALERT card → ~20 s later 🔔 approval
+   card: Beacon BEA-201, ≈$6,470 vs what you paid (≈+$1,200, over your $600) → **Approve** → ✅ REBOOKED card.
+   Meanwhile Buyer B was auto-rebooked onto Cove COV-301 (+$95, within $300); Buyer C untouched.
+   (Auto path instead: set the limit to 2000 → straight to ✅ REBOOKED. Verified: `demo.py rehearse` PASS.)
 
 **Reproduce the scripted recovery scenario (no ASI:One needed):**
 `uv run python scripts/demo.py reset && uv run python scripts/demo.py seed-v2 && uv run python scripts/demo.py withdraw ATL-101`,

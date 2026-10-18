@@ -118,6 +118,9 @@ class RecoveryOffer:
     arrival_at: datetime
     expires_at: datetime
     eligible_booking_ids: tuple[str, ...] = ()
+    # True for a negotiated offer: the price holds only for exactly `capacity_units` (the carrier refuses a
+    # hold for any other quantity), so the solver takes all of it or none of it.
+    exact_quantity: bool = False
 
     def __post_init__(self) -> None:
         if self.capacity_units < 1:
