@@ -18,8 +18,20 @@ try:
 except ImportError:
     pass
 
+# These tests withdraw real sailings. They must never touch a shared database, so they run
+# only when TIGER_DATABASE_URL points at this machine (the dev_db.py container).
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
+def _local_database() -> bool:
+    from urllib.parse import urlparse
+
+    return urlparse(os.getenv("TIGER_DATABASE_URL") or "").hostname in LOCAL_HOSTS
+
+
 pytestmark = pytest.mark.skipif(
-    not os.getenv("TIGER_DATABASE_URL"), reason="TIGER_DATABASE_URL not set; needs live Tiger"
+    not _local_database(),
+    reason="TIGER_DATABASE_URL is unset or not local; these tests withdraw sailings",
 )
 
 

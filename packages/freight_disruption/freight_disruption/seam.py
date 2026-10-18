@@ -11,19 +11,30 @@ from freight_disruption.stranded import PendingWithdrawal, pending_withdrawals, 
 from freight_disruption.withdrawal import WithdrawSailing, withdraw_sailing
 
 
+# What a buyer reads when the caller had only a risk event id to give.
+BUYER_SAFE_REASON = "The carrier withdrew this sailing after a risk advisory for its route."
+
+
 class TigerDisruptionSeam:
     """Implements freight_seams.DisruptionSeam.
 
-    `withdraw` is the same transaction the carrier console runs. The console passes the
-    full advisory text itself; callers of this seam only have the risk event id, so the
-    reason records that.
+    `withdraw` is the same transaction the carrier console runs. The reason is shown to
+    buyers (cancellation notice, booking status), so it must read as plain language. The
+    console passes the advisory text; other callers get BUYER_SAFE_REASON unless they
+    pass their own. The risk event id is stored in its own column either way.
     """
 
     def __init__(self, pool: AsyncConnectionPool) -> None:
         self._pool = pool
 
     async def withdraw(
-        self, *, sailing_id: str, carrier_id: str, risk_event_id: str, actor_id: str
+        self,
+        *,
+        sailing_id: str,
+        carrier_id: str,
+        risk_event_id: str,
+        actor_id: str,
+        reason_text: str | None = None,
     ) -> WithdrawalSummary:
         result = await withdraw_sailing(
             self._pool,
@@ -34,7 +45,7 @@ class TigerDisruptionSeam:
                 actor_id=actor_id,
                 authorization_ref=f"seam:{actor_id}",
                 idempotency_key=uuid4().hex,
-                reason_text=f"Withdrawn via DisruptionSeam for risk event {risk_event_id}",
+                reason_text=(reason_text or "").strip() or BUYER_SAFE_REASON,
             ),
         )
         return WithdrawalSummary(
