@@ -94,9 +94,10 @@ async def seed(repo, extra: list[dict] | None = None) -> list[dict]:
             arrival = (await (await conn.execute(
                 "SELECT arrival_at FROM sailings WHERE sailing_id = 'ATL-101'")).fetchone())[0]
         by = (arrival + timedelta(days=2)).strftime("%b %-d")   # same slack Buyer B was seeded with
-        print("\nBuyer A, live in ASI:One (then `select atlas`, `book it, auto-rebook up to $600 extra`):\n"
-              f'  @freight-recovery-exc Quote 2x20GP from Jebel Ali to Mumbai, arrive by {by}, budget $5,600, '
-              "don't split")
+        print("\nBuyer A, live in ASI:One with the Hormuz Exchange gateway agent:\n"
+              "  say 'I need to ship cargo' -> form: Jebel Ali -> Mumbai, 2 containers, arrive no later than "
+              f"{by}, auto-rebook limit 600 -> choose the Atlas ATL-101 offer -> Confirm and pay (0.1 testnet FET).\n"
+              "  Then withdraw ATL-101 at http://localhost:8800 to watch the joint recovery reach your chat.")
     return made
 
 
