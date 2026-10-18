@@ -340,7 +340,7 @@ class FetBookingService:
                                       "purpose": "recovery_fare_difference", "booking_id": row["booking_id"],
                                       "tx": session_id[:16]})
         if won is None:
-            return {"action": "none", "followups": []}
+            return await self._finish(row["reference"], None)
         for other in row["stripe_session_ids"] or []:
             if other != session_id:
                 await self.stripe.expire(other)
@@ -349,15 +349,19 @@ class FetBookingService:
             ("Paid", f"{money(int(row['amount_minor']), row['currency'])} by card (verified with Stripe)"),
             ("Status", "Your replacement booking is fully paid")],
             f"Thanks, the fare difference for {row['booking_id']} is paid. You're all set.")
-        return {"action": "complete", "transaction_id": session_id, "chat_session_id": row["chat_session_id"],
-                "followups": [receipt]}
+        return await self._finish(row["reference"], receipt)
 
     async def _commit_stripe(self, row: dict, env: dict) -> dict:
-        if row["status"] == "VERIFIED":
-            return await self._completed(row)
+        """ASI:One's own CommitPayment. We answer it exactly once, echoing its transaction id (Fetch's Stripe
+        example), whichever path (this reply, the poller or "paid") verified the payment with Stripe."""
+        session_id = (env.get("transaction_id") or "").strip()
+        async with self.repo.pool.connection() as conn:
+            await conn.execute("UPDATE payment_records SET client_tx_id = coalesce(client_tx_id, %s), updated_at = now() "
+                               "WHERE reference = %s", (session_id or None, row["reference"]))
+        if row["status"] == "VERIFIED":  # the poller got there first: now complete the client's payment
+            return await self._finish(row["reference"], None)
         if row["status"] not in ("REQUESTED", "COMMIT_RECEIVED"):
             return {"action": "none", "followups": []}
-        session_id = (env.get("transaction_id") or "").strip()
         funds = env.get("funds") or {}
         if funds.get("payment_method") not in (None, "", "stripe"):
             return {"action": "none", "followups": []}  # not our card rail; the open checkout stays valid
@@ -410,9 +414,9 @@ class FetBookingService:
                    WHERE reference = %s AND status IN ('REQUESTED', 'COMMIT_RECEIVED') RETURNING payment_id""",
                 ("VERIFIED" if hold_ok else "RECONCILIATION_REQUIRED", session_id, verdict.provider_status,
                  _jsonb(proof), row["reference"]))).fetchone()
-        if won is None:  # another path settled it first: same answer, never a second booking
+        if won is None:  # another path settled it first: same answer, never a second booking or receipt
             latest = await self._payment(row["reference"])
-            return await self._completed(latest) if latest["status"] == "VERIFIED" else {"action": "none", "followups": []}
+            return await self._finish(row["reference"], None) if latest["status"] == "VERIFIED" else {"action": "none", "followups": []}
         for other in row["stripe_session_ids"] or []:
             if other != session_id:
                 await self.stripe.expire(other)
@@ -435,8 +439,30 @@ class FetBookingService:
                                       payment_line=f"{money(int(row['amount_minor']), row['currency'])} paid by card "
                                                    "(verified with Stripe)",
                                       already_held=True)
-        return {"action": "complete", "transaction_id": session_id, "chat_session_id": row["chat_session_id"],
-                "followups": [receipt]}
+        return await self._finish(row["reference"], receipt)
+
+    async def _claim(self, reference: str, flag: str) -> bool:
+        """Atomically take a one-time action ('receipt_sent' / 'complete_sent') for this payment."""
+        assert flag in ("receipt_sent", "complete_sent")
+        async with self.repo.pool.connection() as conn:
+            return bool(await (await conn.execute(
+                f"UPDATE payment_records SET {flag} = true WHERE reference = %s AND NOT {flag} RETURNING 1",
+                (reference,))).fetchone())
+
+    async def _finish(self, reference: str, receipt: dict | None) -> dict:
+        """One receipt and one CompletePayment per payment. CompletePayment only answers the client's own
+        CommitPayment (with its transaction id) and is always followed by a chat message, so the client never
+        sits on 'please wait'. Without a commit yet (hosted link, or Stripe cleared first) only the receipt goes out."""
+        row = await self._payment(reference)
+        follow = [receipt] if receipt is not None and await self._claim(reference, "receipt_sent") else []
+        if row["client_tx_id"] and await self._claim(reference, "complete_sent"):
+            if not follow:
+                booking = row["booking_id"] or (await self._intent(row["intent_id"]) or {}).get("booking_id")
+                follow = [text(f"Payment confirmed. Booking {booking} is confirmed; your receipt is above."
+                               if booking else "Payment confirmed.")]
+            return {"action": "complete", "transaction_id": row["client_tx_id"], "chat_session_id": row["chat_session_id"],
+                    "followups": follow}
+        return {"action": "none", "chat_session_id": row["chat_session_id"], "followups": follow}
 
     async def open_stripe_payments(self, sender: str | None = None) -> list[dict]:
         sql = "SELECT * FROM payment_records WHERE provider = 'stripe' AND status IN ('REQUESTED', 'COMMIT_RECEIVED')"
@@ -506,10 +532,10 @@ class FetBookingService:
             if payment_mode() == "stripe_test":
                 return {"action": "none", "followups": []}  # unknown claim: ignore quietly, never "failed"
             return self._cancel(tx, "This payment isn't one I requested from you; nothing was booked.")
-        if row["status"] == "VERIFIED":  # duplicate commit: same answer, no second booking
-            return await self._completed(row)
         if row["provider"] == "stripe":
             return await self._commit_stripe(row, env)
+        if row["status"] == "VERIFIED":  # duplicate commit: same answer, no second booking
+            return await self._completed(row)
         if row["status"] not in ("REQUESTED", "COMMIT_RECEIVED"):
             return self._cancel(tx, f"This payment is already {row['status'].lower()}; nothing new was booked.")
         problem = None
