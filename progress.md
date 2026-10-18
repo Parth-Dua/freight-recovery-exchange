@@ -168,6 +168,14 @@
 - UX: Stripe Checkout `custom_text` (submit + after_submit) tells the buyer to return to ASI:One and say "paid"; checkout reply says the same. Live stripe_smoke still passes; root 154 passed.
 - Remaining for Phase 4 gate: AT-04-05 failure half (decline card 4000 0000 0000 0002 must not book) via ASI:One.
 
+### 2026-10-17 18:25 — [Parth] Phase 04 merged to main (PR #10); PR #11 reviewed + merged
+- PR #11 (Tisya, real DisruptionSeam) reviewed (10 non-blocking findings posted on the PR: seam withdraw fabricates authorization_ref, stranded quantity vs full price after partial release, idempotency_key never dedupes / unhandled UniqueViolation, duplicated risk id in buyer text, vacuous source-scan test, non-editable package trap, preseed deadline only for new DBs, console panel lost risk id, per-row event inserts) and merged at user's request after clean-copy runs: main+#11 all suites green; phase4+#11 root 154.
+- Phase 4 branch merged with main (incl. #11), all suites: root 154, carriers 61 (7 live Tiger), seams 18, disruption 6 (+2 live skipped), allocation 52, console 16 (+4 live skipped). Tiger clean after: 0 TST rows, 6 sailings ACTIVE, 0 disruption_events.
+- **Phase 4 status:** AT-04-01/02/03/04/06 evidenced (live Tiger, live Stripe TEST, ASI:One BK-28C01D37); AT-04-05 success half evidenced (4242 → BK-0A14FFE2, BK-28C01D37); **AT-04-05 failure half (decline card 4000 0000 0000 0002) NEEDS HUMAN VERIFICATION** — same code path as the live forged-"paid" check (unpaid session → not booked). Merged at user's request so main is current.
+- Demo data note: Tiger holds test bookings BK-0A14FFE2 (agent1qp4livetest) and BK-28C01D37 (main ASI:One account), ATL-101 4/4 COMMITTED. Reset before demo prep.
+- For Tisya: `bookings.max_additional_cost_minor` is live (D5) — `stranded.py` can read it; run `scripts/db.py migrate` on her dev DB (004, 005).
+- Next (Parth lane): AT-04-05 decline test; Phase 6 recovery offers over ACP + recovery trigger on `pending_withdrawals()`; Phase 7 commitments via RecoverySeam.
+
 ## Checkpoint template (append concise updates)
 ### YYYY-MM-DD HH:MM — Phase NN
 - Done:
