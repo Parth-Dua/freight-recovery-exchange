@@ -148,3 +148,58 @@ def not_recovered_message(booking: DisruptedBooking, reason: str | None) -> str:
         paragraphs.append(reason.strip())
     paragraphs.append("Your original booking stays on record. Nothing new was booked or charged.")
     return "\n\n".join(paragraphs)
+
+
+# ---- replies to "approve BK-..." / "decline BK-..." ----------------------------------------
+
+def _reply_hint(booking_id: str) -> str:
+    return f'Reply "approve {booking_id}" or "decline {booking_id}".'
+
+
+def approval_approved(booking_id: str, plan: tuple[dict, ...]) -> str:
+    where = ", ".join(f"{p['sailing_id']} with {str(p['carrier_id']).title()}" for p in plan) or "the replacement"
+    return (
+        f"Approved. I'm confirming {where} for booking {booking_id} with the carrier now and will "
+        "message you here once it's confirmed. Nothing is final until the carrier confirms."
+    )
+
+
+def approval_declined(booking_id: str) -> str:
+    return (
+        f"Declined. I won't book that replacement for {booking_id}. Your original booking stays "
+        "on record, and nothing new was booked or charged."
+    )
+
+
+def approval_already(booking_id: str, status: str) -> str:
+    verb = "approved" if status == "APPROVED" else "declined"
+    return f"You already {verb} the replacement for {booking_id}, so I haven't changed anything."
+
+
+def approval_expired(booking_id: str) -> str:
+    return (
+        f"The replacement for {booking_id} expired before you answered, so nothing was booked. "
+        "Your original booking stays on record."
+    )
+
+
+def approval_not_found(booking_id: str) -> str:
+    return (
+        f"I can't find a replacement waiting for your approval under {booking_id}. "
+        "Check the booking number in my last message."
+    )
+
+
+def approval_nothing_waiting() -> str:
+    return "There's nothing waiting for your approval right now."
+
+
+def approval_which_one(booking_ids: tuple[str, ...]) -> str:
+    return (
+        f"You have more than one replacement waiting: {', '.join(booking_ids)}. "
+        'Reply "approve BK-..." or "decline BK-..." with the one you mean.'
+    )
+
+
+def approval_ambiguous(booking_id: str) -> str:
+    return f"Your reply says both approve and decline. {_reply_hint(booking_id)}"
