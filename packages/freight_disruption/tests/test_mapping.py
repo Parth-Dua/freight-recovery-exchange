@@ -4,14 +4,16 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
+
 from freight_seams import DisruptionSeam
 from freight_disruption import (
     NO_DEADLINE,
-    UNSTORED_RECOVERY_ALLOWANCE_MINOR,
     StrandedRow,
     TigerDisruptionSeam,
     to_disrupted_booking,
 )
+from freight_disruption.seam import BUYER_SAFE_REASON
 from freight_disruption.stranded import PENDING_SQL, STRANDED_SQL
 
 
@@ -29,6 +31,7 @@ def _row(**changes) -> StrandedRow:
         allow_split=False,
         total_price_minor=525_000,
         currency="USD",
+        max_additional_cost_minor=0,
     )
     base.update(changes)
     return StrandedRow(**base)
@@ -47,9 +50,14 @@ def test_no_stated_deadline_never_binds() -> None:
     assert to_disrupted_booking(_row(latest_arrival=None)).latest_arrival == NO_DEADLINE
 
 
-def test_unstored_allowance_means_approval_for_any_extra_cost() -> None:
-    """PRD D5 is not stored yet; zero sends every pricier replacement to the buyer."""
-    assert UNSTORED_RECOVERY_ALLOWANCE_MINOR == 0
+def test_stored_allowance_reaches_the_solver() -> None:
+    """PRD D5: the extra cost the buyer pre-approved at booking time (migration 005)."""
+    assert to_disrupted_booking(_row(max_additional_cost_minor=35_000)).max_additional_cost_minor == 35_000
+    assert "b.max_additional_cost_minor" in STRANDED_SQL
+
+
+def test_zero_allowance_stays_zero() -> None:
+    """The column defaults to 0: any pricier replacement goes to the buyer for approval."""
     assert to_disrupted_booking(_row()).max_additional_cost_minor == 0
 
 
@@ -64,3 +72,45 @@ def test_only_still_disrupted_bookings_on_that_sailing_are_read() -> None:
 def test_pending_means_no_recovery_run_yet() -> None:
     assert "rr.withdrawal_event_id IS NULL" in PENDING_SQL
     assert "SAILING_WITHDRAWN" in PENDING_SQL
+
+
+class _Result:
+    event_id = "evt_1"
+    sailing_id = "ATL-101"
+    carrier_id = "atlas"
+    already_withdrawn = False
+    disrupted_booking_ids = ()
+    untouched_booking_count = 0
+
+
+@pytest.fixture
+def sent(monkeypatch) -> list:
+    commands: list = []
+
+    async def fake_withdraw(pool, cmd):
+        commands.append(cmd)
+        return _Result()
+
+    monkeypatch.setattr("freight_disruption.seam.withdraw_sailing", fake_withdraw)
+    return commands
+
+
+async def test_buyers_never_see_internal_wording(sent) -> None:
+    await TigerDisruptionSeam(pool=None).withdraw(
+        sailing_id="ATL-101", carrier_id="atlas", risk_event_id="risk_sim_0001", actor_id="recovery"
+    )
+    (cmd,) = sent
+    assert cmd.reason_text == BUYER_SAFE_REASON
+    assert "risk_sim" not in cmd.reason_text and "Seam" not in cmd.reason_text
+    assert cmd.reason_risk_event_id == "risk_sim_0001"
+
+
+async def test_caller_reason_is_kept(sent) -> None:
+    await TigerDisruptionSeam(pool=None).withdraw(
+        sailing_id="ATL-101",
+        carrier_id="atlas",
+        risk_event_id="risk_sim_0001",
+        actor_id="recovery",
+        reason_text="  Security incident reported in the transit corridor.  ",
+    )
+    assert sent[0].reason_text == "Security incident reported in the transit corridor."

@@ -7,6 +7,8 @@ Booking (Phase 4, carrier-owned inventory):
   REQUEST_HOLD    -> HOLD_CONFIRMED | HOLD_REJECTED | AGENT_ERROR
   RELEASE_HOLD    -> HOLD_RELEASED | AGENT_ERROR
   CONFIRM_BOOKING -> BOOKING_CONFIRMED | BOOKING_REJECTED | AGENT_ERROR
+Recovery (Phase 6, one-shot: no counter is ever sent on a recovery offer):
+  REQUEST_RECOVERY_CAPACITY -> RECOVERY_CAPACITY_OFFERS | REJECT_OFFER | AGENT_ERROR
 
 These are our application messages carried as typed uAgents models — not
 built-in ACP verbs. Money is integer minor units + ISO currency; timestamps
@@ -225,6 +227,9 @@ class RequestHold(_ExpiringRequest):
     buyer_id: str
     idempotency_key: str = Field(..., min_length=8, max_length=200)
     requested_ttl_seconds: int = Field(..., ge=60, le=7200)
+    # Phase 7 (additive): hold part of a one-shot recovery offer. `offer_id` is then the
+    # Exchange's per-booking offer row, priced at this recovery offer's unit price.
+    recovery_offer_id: Optional[str] = None
 
 
 class HoldConfirmed(_SignedReply):
@@ -268,6 +273,7 @@ class ConfirmBooking(_ExpiringRequest):
     idempotency_key: str = Field(..., min_length=8, max_length=200)
     intent_id: str
     claim_code_hash: str
+    replaces_booking_id: Optional[str] = None  # Phase 7 (additive): recovery lineage
 
 
 class BookingConfirmed(_SignedReply):
@@ -290,13 +296,83 @@ class BookingRejected(_SignedReply):
     detail: str = ""
 
 
+# ---- Phase 6: one-shot recovery capacity (additive) ----
+
+class RecoveryItem(Model):
+    """One displaced booking's hard requirements (spec 06 §5 request_items).
+
+    The buyer's price envelope is deliberately not sent: carriers price from their own
+    policy, and the allocation enforces the envelope (decision 0007)."""
+
+    booking_id: str
+    container_type: ContainerType
+    quantity: int = Field(..., ge=1, le=50)
+    origin_port: str = Field(..., min_length=5, max_length=5)
+    destination_port: str = Field(..., min_length=5, max_length=5)
+    latest_arrival: datetime
+    allow_split: bool = False
+    currency: str = Field("USD", min_length=3, max_length=3)
+
+    @validator("latest_arrival", allow_reuse=True)
+    def _utc(cls, value):
+        return _require_utc(value)
+
+    @validator("origin_port", "destination_port", "currency", allow_reuse=True)
+    def _upper(cls, value: str) -> str:
+        return value.upper()
+
+
+class RequestRecoveryCapacity(_ExpiringRequest):
+    """Exchange -> every active carrier, once per recovery run. `expires_at` is the response
+    deadline. `negotiation_id` carries the recovery run id; there is no cargo request."""
+
+    message_type: Literal["REQUEST_RECOVERY_CAPACITY"] = "REQUEST_RECOVERY_CAPACITY"
+    recovery_run_id: str
+    withdrawn_sailing_id: str
+    request_items: list[RecoveryItem] = Field(..., min_items=1, max_items=50)
+
+
+class RecoveryCapacityTerms(Model):
+    """One sailing's replacement capacity. `total_price_minor` covers all `capacity_units`."""
+
+    offer_id: str
+    sailing_id: str
+    vessel_name: str
+    origin_port: str
+    destination_port: str
+    container_type: ContainerType
+    capacity_units: int = Field(..., ge=1)
+    total_price_minor: int = Field(..., ge=1)
+    currency: str
+    departure_at: datetime
+    arrival_at: datetime
+    expires_at: datetime
+    eligible_booking_ids: list[str] = Field(..., min_items=1)
+
+    @validator("departure_at", "arrival_at", "expires_at", allow_reuse=True)
+    def _utc_times(cls, value):
+        return _require_utc(value)
+
+
+class RecoveryCapacityOffers(_SignedReply):
+    """Carrier -> Exchange: one or more sailing alternatives, final. Never a counteroffer."""
+
+    message_type: Literal["RECOVERY_CAPACITY_OFFERS"] = "RECOVERY_CAPACITY_OFFERS"
+    recovery_run_id: str
+    offers: list[RecoveryCapacityTerms] = Field(..., min_items=1, max_items=20)
+    terms: str = "One-shot recovery capacity; not a hold or booking. No counteroffers."
+    source_kind: SourceKind = "simulated"
+
+
 CarrierReply = Union[ProposeOffer, RejectOffer, AgentError]
 CounterReply = Union[AcceptCounter, RevisedOffer, RejectCounter, AgentError]
+RecoveryReply = Union[RecoveryCapacityOffers, RejectOffer, AgentError]
 OfferTerms = _OfferTerms
 _REPLY_TYPES = {
     m.__fields__["message_type"].default: m
     for m in (ProposeOffer, RejectOffer, AgentError, AcceptCounter, RevisedOffer, RejectCounter,
-              HoldConfirmed, HoldRejected, HoldReleased, BookingConfirmed, BookingRejected)
+              HoldConfirmed, HoldRejected, HoldReleased, BookingConfirmed, BookingRejected,
+              RecoveryCapacityOffers)
 }
 
 

@@ -85,8 +85,59 @@ async def expire_stale_holds(conn: AsyncConnection, carrier_id: str) -> list[str
     return [r[0] for r in expired]
 
 
+async def _quote_offer_terms(conn: AsyncConnection, carrier_id: str, *, offer_id: str, request_id: str,
+                             quantity: int) -> tuple[str, str] | HoldOutcome:
+    """A buyer's own quote: hold exactly the offered units of the current (not superseded) offer."""
+    offer = await (await conn.execute(
+        """SELECT sailing_id, container_type, quantity, expires_at, round, negotiation_id, request_id, offer_kind
+           FROM carrier_offer_log WHERE offer_id = %s AND carrier_id = %s""",
+        (offer_id, carrier_id))).fetchone()
+    if offer is None or offer[6] != request_id or offer[7] != "quote":
+        return HoldOutcome(False, "OFFER_NOT_FOUND", "no such offer from this carrier for this request")
+    sailing_id, container_type, offer_qty, offer_expires, rnd, negotiation_id, _, _ = offer
+    superseded = await (await conn.execute(
+        """SELECT 1 FROM carrier_offer_log WHERE carrier_id = %s AND negotiation_id = %s AND round > %s""",
+        (carrier_id, negotiation_id, rnd))).fetchone()
+    if superseded:
+        return HoldOutcome(False, "OFFER_SUPERSEDED", "a newer negotiated offer replaced this one")
+    if offer_expires <= datetime.now(offer_expires.tzinfo):
+        return HoldOutcome(False, "OFFER_EXPIRED", "offer expired; request a new quote")
+    if quantity != offer_qty:
+        return HoldOutcome(False, "QUANTITY_MISMATCH", f"offer is for {offer_qty} units")
+    return sailing_id, container_type
+
+
+async def _recovery_offer_terms(conn: AsyncConnection, carrier_id: str, *, recovery_offer_id: str, run_id: str,
+                                offer_id: str, quantity: int) -> tuple[str, str] | HoldOutcome:
+    """Part of a one-shot recovery offer (Phase 7). The row lock serializes holds on one offer, so the
+    units held under it never exceed what we offered; the per-booking offer row the Exchange wrote must
+    carry exactly our unit price."""
+    rof = await (await conn.execute(
+        """SELECT sailing_id, container_type, quantity, total_price_minor, expires_at, negotiation_id
+           FROM carrier_offer_log WHERE offer_id = %s AND carrier_id = %s AND offer_kind = 'recovery'
+           FOR UPDATE""", (recovery_offer_id, carrier_id))).fetchone()
+    if rof is None or rof[5] != run_id:
+        return HoldOutcome(False, "OFFER_NOT_FOUND", "no such recovery offer from this carrier for this run")
+    sailing_id, container_type, capacity, total, expires, _ = rof
+    if expires <= datetime.now(expires.tzinfo):
+        return HoldOutcome(False, "OFFER_EXPIRED", "recovery offer expired")
+    used = (await (await conn.execute(
+        """SELECT coalesce(sum(quantity), 0) FROM holds
+           WHERE recovery_offer_id = %s AND status IN ('ACTIVE', 'COMMITTED')""",
+        (recovery_offer_id,))).fetchone())[0]
+    if used + quantity > capacity:
+        return HoldOutcome(False, "INSUFFICIENT_CAPACITY", f"only {capacity - used} offered unit(s) remain")
+    row = await (await conn.execute(
+        "SELECT sailing_id, container_type, quantity, total_price_minor, carrier_id FROM offers WHERE offer_id = %s",
+        (offer_id,))).fetchone()
+    if row is None or tuple(row) != (sailing_id, container_type, quantity, total // capacity * quantity, carrier_id):
+        return HoldOutcome(False, "HOLD_TERMS_MISMATCH", "booking offer does not match our recovery offer")
+    return sailing_id, container_type
+
+
 async def request_hold(pool: AsyncConnectionPool, carrier_id: str, *, offer_id: str, request_id: str,
-                       buyer_id: str, quantity: int, idempotency_key: str, ttl_seconds: int) -> HoldOutcome:
+                       buyer_id: str, quantity: int, idempotency_key: str, ttl_seconds: int,
+                       recovery_offer_id: str | None = None, run_id: str = "") -> HoldOutcome:
     async with pool.connection() as conn, conn.transaction():
         prior = await (await conn.execute(
             """SELECT hold_id, status, expires_at, sailing_id, quantity, carrier_id FROM holds
@@ -102,22 +153,14 @@ async def request_hold(pool: AsyncConnectionPool, carrier_id: str, *, offer_id: 
 
         await expire_stale_holds(conn, carrier_id)
 
-        offer = await (await conn.execute(
-            """SELECT sailing_id, container_type, quantity, expires_at, round, negotiation_id, request_id
-               FROM carrier_offer_log WHERE offer_id = %s AND carrier_id = %s""",
-            (offer_id, carrier_id))).fetchone()
-        if offer is None or offer[6] != request_id:
-            return HoldOutcome(False, "OFFER_NOT_FOUND", "no such offer from this carrier for this request")
-        sailing_id, container_type, offer_qty, offer_expires, rnd, negotiation_id, _ = offer
-        superseded = await (await conn.execute(
-            """SELECT 1 FROM carrier_offer_log WHERE carrier_id = %s AND negotiation_id = %s AND round > %s""",
-            (carrier_id, negotiation_id, rnd))).fetchone()
-        if superseded:
-            return HoldOutcome(False, "OFFER_SUPERSEDED", "a newer negotiated offer replaced this one")
-        if offer_expires <= datetime.now(offer_expires.tzinfo):
-            return HoldOutcome(False, "OFFER_EXPIRED", "offer expired; request a new quote")
-        if quantity != offer_qty:
-            return HoldOutcome(False, "QUANTITY_MISMATCH", f"offer is for {offer_qty} units")
+        terms = (await _recovery_offer_terms(conn, carrier_id, recovery_offer_id=recovery_offer_id, run_id=run_id,
+                                             offer_id=offer_id, quantity=quantity)
+                 if recovery_offer_id else
+                 await _quote_offer_terms(conn, carrier_id, offer_id=offer_id, request_id=request_id,
+                                          quantity=quantity))
+        if isinstance(terms, HoldOutcome):
+            return terms
+        sailing_id, container_type = terms
 
         sailing = await (await conn.execute(
             "SELECT status FROM sailings WHERE sailing_id = %s AND carrier_id = %s FOR SHARE",
@@ -141,17 +184,18 @@ async def request_hold(pool: AsyncConnectionPool, carrier_id: str, *, offer_id: 
         hold_id = f"hold_{carrier_id}_{uuid4().hex[:12]}"
         row = await (await conn.execute(
             """INSERT INTO holds (hold_id, buyer_id, carrier_id, offer_id, status, idempotency_key, expires_at,
-                                  request_id, sailing_id, container_type, quantity)
-               VALUES (%s, %s, %s, %s, 'ACTIVE', %s, now() + make_interval(secs => %s), %s, %s, %s, %s)
+                                  request_id, sailing_id, container_type, quantity, recovery_offer_id)
+               VALUES (%s, %s, %s, %s, 'ACTIVE', %s, now() + make_interval(secs => %s), %s, %s, %s, %s, %s)
                RETURNING expires_at""",
             (hold_id, buyer_id, carrier_id, offer_id, idempotency_key, ttl_seconds, request_id, sailing_id,
-             container_type, quantity))).fetchone()
+             container_type, quantity, recovery_offer_id))).fetchone()
         for slot_id in slots:
             await conn.execute("INSERT INTO hold_slots (hold_id, slot_id, status) VALUES (%s, %s, 'ACTIVE')",
                                (hold_id, slot_id))
         await _event(conn, "HOLD_CREATED", "hold", hold_id, carrier_id=carrier_id, sailing_id=sailing_id,
-                     correlation_id=await _correlation(conn, request_id),
-                     payload={"offer_id": offer_id, "quantity": quantity, "ttl_seconds": ttl_seconds})
+                     correlation_id=run_id or await _correlation(conn, request_id),
+                     payload={"offer_id": offer_id, "quantity": quantity, "ttl_seconds": ttl_seconds,
+                              "recovery_offer_id": recovery_offer_id})
         return HoldOutcome(True, "HOLD_CONFIRMED", hold_id=hold_id, expires_at=row[0], sailing_id=sailing_id,
                            quantity=quantity)
 
@@ -183,7 +227,7 @@ def new_claim_code() -> str:
 
 async def confirm_booking(pool: AsyncConnectionPool, carrier_id: str, *, hold_id: str, payment_reference: str,
                           idempotency_key: str, intent_id: str, claim_code_hash: str,
-                          payment_terms: str) -> ConfirmOutcome:
+                          payment_terms: str, replaces_booking_id: str | None = None) -> ConfirmOutcome:
     async with pool.connection() as conn, conn.transaction():
         prior = await (await conn.execute(
             "SELECT booking_id, confirmed_at, carrier_id FROM bookings WHERE confirmation_key = %s",
@@ -212,6 +256,12 @@ async def confirm_booking(pool: AsyncConnectionPool, carrier_id: str, *, hold_id
         if sailing is None or sailing[0] != "ACTIVE":
             return ConfirmOutcome(False, "SAILING_NOT_ACTIVE", "sailing is no longer active")
 
+        if replaces_booking_id is not None:  # recovery: only a displaced booking of this same buyer
+            old = await (await conn.execute(
+                "SELECT buyer_id, status FROM bookings WHERE booking_id = %s", (replaces_booking_id,))).fetchone()
+            if old is None or old[0] != buyer_id or old[1] != "DISRUPTED":
+                return ConfirmOutcome(False, "REPLACES_MISMATCH", "replaced booking is not this buyer's disrupted booking")
+
         slots = [r[0] for r in await (await conn.execute(
             "SELECT slot_id FROM hold_slots WHERE hold_id = %s AND status = 'ACTIVE' FOR UPDATE", (hold_id,))).fetchall()]
         if len(slots) != quantity:
@@ -220,11 +270,13 @@ async def confirm_booking(pool: AsyncConnectionPool, carrier_id: str, *, hold_id
         confirmed = (await (await conn.execute(
             """INSERT INTO bookings (booking_id, buyer_id, request_id, offer_id, carrier_id, sailing_id, status,
                                      total_price_minor, currency, confirmation_key, source_kind, hold_id, intent_id,
-                                     payment_reference, claim_code_hash, payment_terms, confirmed_at)
-               VALUES (%s, %s, %s, %s, %s, %s, 'COMMITTED', %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+                                     payment_reference, claim_code_hash, payment_terms, confirmed_at,
+                                     replaces_booking_id)
+               VALUES (%s, %s, %s, %s, %s, %s, 'COMMITTED', %s, %s, %s, %s, %s, %s, %s, %s, %s, now(), %s)
                RETURNING confirmed_at""",
             (booking_id, buyer_id, request_id, offer_id, carrier_id, sailing_id, total, currency, idempotency_key,
-             SOURCE, hold_id, intent_id, payment_reference, claim_code_hash, payment_terms))).fetchone())[0]
+             SOURCE, hold_id, intent_id, payment_reference, claim_code_hash, payment_terms,
+             replaces_booking_id))).fetchone())[0]
         for slot_id in slots:
             await conn.execute("INSERT INTO booking_slots (booking_id, slot_id, status) VALUES (%s, %s, 'COMMITTED')",
                                (booking_id, slot_id))
@@ -239,5 +291,5 @@ async def confirm_booking(pool: AsyncConnectionPool, carrier_id: str, *, hold_id
                      correlation_id=await _correlation(conn, request_id),
                      payload={"hold_id": hold_id, "quantity": quantity, "total_price_minor": total,
                               "currency": currency, "payment_reference": payment_reference,
-                              "intent_id": intent_id})
+                              "intent_id": intent_id, "replaces_booking_id": replaces_booking_id})
         return ConfirmOutcome(True, "BOOKING_CONFIRMED", booking_id=booking_id, confirmed_at=confirmed)

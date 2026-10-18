@@ -18,10 +18,6 @@ from freight_seams import DisruptedBooking
 # timezone-aware datetime, so "no deadline" is a date far enough away never to bind.
 NO_DEADLINE = datetime(2100, 1, 1, tzinfo=timezone.utc)
 
-# PRD decision D5: the extra cost each buyer pre-approves for recovery is not stored yet.
-# Zero means every pricier replacement goes to the buyer for approval, the safe default.
-UNSTORED_RECOVERY_ALLOWANCE_MINOR = 0
-
 
 @dataclass(frozen=True)
 class StrandedRow:
@@ -39,6 +35,7 @@ class StrandedRow:
     allow_split: bool
     total_price_minor: int
     currency: str
+    max_additional_cost_minor: int
 
 
 @dataclass(frozen=True)
@@ -65,7 +62,7 @@ def to_disrupted_booking(row: StrandedRow) -> DisruptedBooking:
         allow_split=row.allow_split,
         original_price_minor=row.total_price_minor,
         currency=row.currency,
-        max_additional_cost_minor=UNSTORED_RECOVERY_ALLOWANCE_MINOR,
+        max_additional_cost_minor=row.max_additional_cost_minor,
     )
 
 
@@ -75,7 +72,8 @@ SELECT b.booking_id, b.buyer_id, b.carrier_id, b.sailing_id,
        COALESCE(NULLIF(bs.slots, 0), o.quantity) AS quantity,
        s.origin_port, s.destination_port,
        r.latest_arrival, r.allow_split,
-       b.total_price_minor, b.currency
+       b.total_price_minor, b.currency,
+       b.max_additional_cost_minor
 FROM bookings b
 JOIN offers o ON o.offer_id = b.offer_id
 JOIN cargo_requests r ON r.request_id = b.request_id
