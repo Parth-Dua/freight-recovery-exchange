@@ -1,15 +1,39 @@
-# Coding Agent Rules — Autonomous Freight Recovery
+# Freight Recovery Exchange (LA Hacks AI Hackathon 2026)
 
-Two builders work in parallel. **Parth** talks to the carriers and makes bookings real: ACP to the carrier uAgents, Almanac, policy, quoting, holds and payment, recovery offers over ACP, reserving and confirming replacements, Tiger. **Tisya** owns the ASI:One side and the recovery decision: discovery, buyer identity, cards, approvals, sailing withdrawal and the carrier console, checking carrier claims, the OR-Tools allocation, and the demo. The step-by-step recovery split is in `OWNERSHIP.md`. Folder ownership and the git workflow are in `OWNERSHIP.md`. Everything one lane needs from the other goes through `packages/freight_seams/`.
+Agent-native ocean-freight exchange on Fetch.ai: buyers book through ASI:One, independent
+carrier agents quote and negotiate over ACP, and when a sailing is withdrawn the exchange
+recovers the displaced bookings.
 
-At **every session start**, read `OWNERSHIP.md`, `progress.md`, the **active** `docs/specs/NN-*.md` for the lane you are working in, then relevant parts of `docs/PRD.md`. The PRD is context, **not** permission to implement future phases. Follow explicit recent user decisions over outdated PRD proposals.
+Before doing anything, read in this order:
+1. `AGENTS.md`: project rules, including the mandatory `progress.md` updates.
+2. `OWNERSHIP.md`: who owns which folders, and the git workflow.
+3. `progress.md` and the active `docs/specs/NN-*.md`.
 
-1. **One phase at a time, per lane.** Each owner works one phase of their own lane at a time, and does not enter that lane's next phase until its active acceptance gates have verified evidence. The other lane's progress never blocks you: build against its seam. Part 2 is strictly deferred.
-2. **Specs before code.** Implement the smallest tested work package. Verify actual SDK APIs against official docs; do not invent ACP / Stripe / Fetch capabilities.
-3. **Mandatory progress log:** Update `progress.md` after each work package, test run, blocker, decision change, and **immediately before stopping**. Keep it short: phase/status, completed, exact test evidence, blockers, changed files, next precise action/command. Do not erase history needed for recovery. Two people append to it: tag every checkpoint heading `[Parth]` or `[Tisya]`, never edit the other person's entries, and on a merge conflict in `progress.md` keep both sides.
-4. **Ownership and git:** Only edit folders owned by the person you are working with (`OWNERSHIP.md`). If a change is needed elsewhere, write it under `NEEDS-FROM-<owner>` in the PR. Never commit or push to `main`: branch from fresh `main` as `<name>/<feature>`, merge `origin/main` and run every affected test suite before opening a PR, and do not merge unless that person explicitly says to.
-5. **Seams, not waiting:** Cross-lane dependencies go through a Protocol in `packages/freight_seams/`. Build against its fake until the real implementation lands. Seam signatures are additive only and change only with the other owner's yes. A run against a fake is a unit test, never Agentverse, ASI:One, ACP, Stripe or Tiger evidence; replacing a fake with the real implementation needs live evidence recorded in `progress.md`.
-6. **Safety:** `.env` never committed; sanitize logs; only Stripe `sk_test_` credentials; no real money; no refunds or escrow; deterministic authorization and atomic inventory checks. Each person uses their own Tiger database, and never run two processes on the same `AGENT_URI` (mailbox mode delivers each message to only one of them).
-7. **Handoff:** Any agent should be able to resume by reading `AGENTS.md`, `OWNERSHIP.md`, `progress.md`, the active spec for its lane and relevant PRD sections only.
+## Hard rules
 
-**Locked flow:** immediate one-buyer ACP negotiation at booking (max one counter); carrier-authorized sailing withdrawal; one-shot ACP recovery offers; OR-Tools joint allocation; carrier holds/confirmation; ASI:One results. Tiger transactional truth + market event hypertable. Live advisories, Sentry, Market Command Center = Part 2.
+- **Process since 2026-10-18 (user decision):** Parth owns the whole build. Work directly on `main`
+  in `~/Downloads/LAHacksAI2026`, commit and push to `main`, no PRs or approvals needed. Work the
+  phases in `docs/specs_2/` in order (PRD: `docs/PRD.md`; old PRD: `docs/oldPRD.md`).
+- Anything needing the user goes in `docs/critical_alerts.md`, with current testing steps kept up
+  to date there.
+- Before each push: run every affected test suite.
+- A test against a fake is a unit test. Never present it as Agentverse, ASI:One, ACP,
+  Stripe or Tiger evidence.
+- Never commit `.env`, and never print a key, seed or `AGENT_URI`. Check that a secret is
+  set by its length, not its value.
+
+## Shared resources (parallel work)
+
+- **Tiger:** each person uses their own database. The console withdraws sailings, and
+  `scripts/db.py seed` does not un-withdraw them. Local dev database:
+  `cd console && uv run python scripts/dev_db.py up` (first time) or `reset` (clean slate).
+- **Agent identity:** only one process may run with a given `AGENT_URI` (mailbox mode).
+  Use your own throwaway Agentverse agent for experiments.
+
+## Commands
+
+- Root: `uv run pytest -q`
+- Console: `cd console && uv run pytest -q` (live Tiger tests skip without `TIGER_DATABASE_URL`)
+- Seams: `cd packages/freight_seams && uv run pytest -q`
+- If root tests fail at import after `freight_contracts` changes, the install is stale
+  (it is non-editable): `uv sync --reinstall-package freight-contracts`

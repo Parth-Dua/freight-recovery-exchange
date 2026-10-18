@@ -1,7 +1,7 @@
 # Progress — Autonomous Freight Recovery
 
-**Active phase:** [Parth lane] 08 — integration, reliability, submission (tooling + automated evidence done; human ASI:One runs + video pending).  
-**Phase status:** Phase 01 CLOSED. Phase 02 PASSED. Phase 03 PASSED (AT-03-01..06; ASI:One evidence 2026-10-17). Phase 04 merged (all AT evidenced except AT-04-05 decline-card half: NEEDS HUMAN VERIFICATION). Phase 06 [Parth half] gate MET live (PR #16 merged). Phase 07 [Parth half] commitments MET live, AT-07-05 approval MET live (handler level); ASI:One summary NEEDS HUMAN VERIFICATION. Phase 08 IN PROGRESS (see 21:40 checkpoint). See dated checkpoints below; the sections under this header are from Phase 1.  
+**Active phase:** v2 (docs/PRD.md + docs/specs_2) Phase 1 — mailbox uAgent gateway. Part 1 (docs/oldPRD.md) phases 1–8 done as recorded below.  
+**Process (2026-10-18, user):** Parth owns everything; commit straight to `main`; user-facing alerts + test steps in `docs/critical_alerts.md`.  
 **Updated:** 2026-10-17  
 **Scope:** Part 1. Part 2 blocked until Phase 8 passes.
 
@@ -220,6 +220,11 @@
 - Launcher verified: `run_demo.sh` → 5 carriers, Exchange "Registered with agentverse", worker, console HTTP 200, no tracebacks (worker now `python -u` so its log is live).
 - Tiger now: reset + seeded (Buyer B on ATL-101, Buyer C on DHW-571), ready for the live ASI:One demo.
 - Still human: AT-08-02 (live Buyer A recovered), AT-08-06 discovery without @handle, three live clean demos, decline card, video, fresh-teammate README run.
+
+### 2026-10-18 00:55 PDT — [Parth] v2 Phase 1: buyer gateway uAgent (main)
+- Done: `gateway/` uv project (uagents 0.26.1 = repo's proven pin; spec's 0.25.5 is the tutorial pair) — `buyer_gateway` mailbox Agent with `chat_protocol_spec` + `payment_protocol_spec` role=seller (both manifests published), ack-safe chat handler, msg_id dedupe, card wire (`TextContent`+`MetadataContent`, string metadata, unwrapped `card_payload`, 64KB/kind checks, text fallback), outbox poller pushing into the stored session, CommitPayment/RejectPayment → backend verdict (Complete/Cancel only on verdict), optional self-registration with `AGENTVERSE_API_KEY`. Backend: migration 008 (`chat_bindings`, `gateway_events`, `chat_outbox`, payment_records FET columns + statuses), `gateway_store.py`, `gateway_service.py` (form card from live corridors, action parser for direct JSON, legacy-graph text fallback in-process, payment smoke = real RequestPayment never completed, notify smoke), `exchange_api.py` (Starlette, token auth). `scripts/init_gateway_identity.py`; `run_demo.sh` starts API + gateway.
+- Evidence (local, not ASI:One): API 401 without token; "I need to ship cargo" → form card; card action JSON parsed; duplicate event replayed identically; corridors via legacy graph from Tiger; outbox enqueue → item for same session → ack; payment smoke RequestPayment 0.1 FET; commit without wallet → cancel; reject → no booking. Gateway live startup: address agent1q0ktnrh…ymxm8, manifests AgentChatProtocol + AgentPaymentProtocol published, Almanac API registration OK; **mailbox not connected** (no AGENTVERSE_API_KEY) → user alert. Tests: gateway 3, root 248.
+- Next: user connects mailbox + live ASI:One checks (critical_alerts.md); meanwhile Phase 2 cards.
 
 ## Checkpoint template (append concise updates)
 ### YYYY-MM-DD HH:MM — Phase NN
