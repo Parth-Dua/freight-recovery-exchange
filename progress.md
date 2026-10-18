@@ -176,6 +176,11 @@
 - For Tisya: `bookings.max_additional_cost_minor` is live (D5) — `stranded.py` can read it; run `scripts/db.py migrate` on her dev DB (004, 005).
 - Next (Parth lane): AT-04-05 decline test; Phase 6 recovery offers over ACP + recovery trigger on `pending_withdrawals()`; Phase 7 commitments via RecoverySeam.
 
+### 2026-10-17 18:40 — [Parth] Repo moved out of iCloud + richer demo market (branch parth/richer-demo-data)
+- **Repo now lives at `~/Downloads/LAHacksAI2026`** (fresh clone + copied `.env`, mode 600). `~/Documents` is iCloud-synced: it hid `.pth` files and created "name 2.ext" copies; 16 such copies had been committed in #10 (all byte-identical; removed in 5801eb2, `.gitignore` now ignores `* N.ext` / `* N`). New location: no hidden `.pth`, 0 duplicates. All services restarted from the new path. Old folder left for the user to delete (contains `.env`).
+- Richer market (seeded non-destructively on Parth's Tiger): 6 ports (AEJEA, SADMM, OMSOH, INBOM, INMUN, PKKHI), 5 corridors, 5 carriers (+ Meridian, + Dhow; new seeds via init script), 9 vessels, 23 sailings, 118 slots. Recovery-scarcity invariant kept: on AEJEA-INBOM only ATL-101/BEA-201/COV-301 arrive by ~anchor+4d; ATL-101 stays the first ACTIVE departure (console preseed target). `seed --anchor auto`; `scripts/reset_demo.py` (dry run default; `--yes` wipes transactional data + re-anchors) — **not run yet, awaiting user OK** (would delete BK-0A14FFE2 / BK-28C01D37 and test history). `run_carriers.sh` reads carriers from the fixture.
+- Tests at new location: root 154, carriers 61 (7 live), seams 18, disruption 6, allocation 26, console 16. Live: SADMM→INBOM 3×20GP → 5 carriers asked; Atlas ATL-151 $7,800→$7,410 accepted, Meridian MER-451 $8,700→$8,180; 3 declined (no lane); 7/7 signatures.
+
 ## Checkpoint template (append concise updates)
 ### YYYY-MM-DD HH:MM — Phase NN
 - Done:
