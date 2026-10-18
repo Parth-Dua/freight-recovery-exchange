@@ -16,9 +16,16 @@ Updated as the v2 phases (`docs/specs_2/`) progress. Only things that need **you
 
 1. ✅ **Mailbox connected** (you, via the inspector). Handle: `@freight-disruption`. Check in Agentverse that the
    agent's profile shows the README and both protocols. Nothing else to do here.
-2. **ASI:One testnet FET wallet** with a little test FET (official Fetch faucet; never mainnet). If ASI:One
-   shows no FET payment step or the commit lacks `buyer_fet_wallet`, write that here — it is the documented
-   P0 blocker (PRD §7) and I will record it.
+2. **ASI:One testnet FET wallet** (testnet only, never mainnet; the fee is 0.1 test FET):
+   1. Make a `fetch1…` wallet: in ASI:One, check Payments/wallet settings for a built-in or testnet wallet and use
+      it if there is one. Otherwise install the ASI Alliance Wallet (https://fetch.ai/get-asi-wallet), create an
+      account (keep the seed phrase private), switch it to the Dorado testnet, and copy the `fetch1…` address.
+   2. Fund it: in ASI:One open the **Dorado Faucet** agent (https://asi1.ai/ai/dorado-faucet) and send
+      `send faucet to fetch1…` (1 test FET per request, once per hour). Or paste the address to me and I top it
+      up from the testnet faucet API.
+   3. At **Confirm and pay**, approve the 0.1 FET request. Then report here: was there an Approve/Reject card,
+      which wallet did it pay from, and did the booking receipt arrive? If there is no payment UI, or
+      `logs/exchange_api.log` shows the commit without `buyer_fet_wallet`, the P0 blocker (PRD §7) applies.
 3. **Submission (only you can):** Devpost + ASI:One Submission Agent, a 3–5 min video, and a shared ASI:One
    chat URL. README already has the badges, agent addresses and setup.
 
