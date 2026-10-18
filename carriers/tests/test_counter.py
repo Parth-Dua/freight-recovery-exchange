@@ -75,7 +75,7 @@ def test_precheck_passes_valid_counter():
     ({"log": logged(negotiation_id="other")}, "reject", RejectReason.OFFER_NOT_FOUND),
     ({"log": logged(expires_at=NOW - timedelta(seconds=1))}, "reject", RejectReason.OFFER_EXPIRED),
     ({"log": logged(counters_used=1)}, "reject", RejectReason.COUNTER_LIMIT_REACHED),
-    ({"log": logged(round=2)}, "reject", RejectReason.COUNTER_LIMIT_REACHED),
+    ({"log": logged(round=3)}, "reject", RejectReason.COUNTER_LIMIT_REACHED),  # v2: two counters max
     ({"msg": counter(currency="EUR")}, "error", ErrorCode.MALFORMED_REQUEST),
 ])
 def test_precheck_rejections(kwargs, kind, code):
@@ -83,6 +83,11 @@ def test_precheck_rejections(kwargs, kind, code):
     assert got_kind == kind and code in (fields.get("error_code"), fields.get("reason_code"))
 
 
-def test_counter_message_only_allows_round_one():
+def test_counter_message_allows_two_rounds_only():  # v2: at most two buyer counters per session
+    assert counter(round=2).round == 2
     with pytest.raises(Exception):
-        counter(round=2)
+        counter(round=3)
+
+
+def test_negotiated_offer_can_be_countered_once_more():
+    assert pre(log=logged(round=2)) is None

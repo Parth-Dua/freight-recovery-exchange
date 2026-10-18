@@ -200,7 +200,8 @@ def validate_reply(
     return "offer", reply, None, "", True
 
 
-def build_counter(opening: OfferTerms, request: RequestOffer, proposed: int, now: datetime, timeout_s: float) -> CounterOffer:
+def build_counter(opening: OfferTerms, request: RequestOffer, proposed: int, now: datetime, timeout_s: float,
+                  *, round_number: int = 1, rationale: str = "") -> CounterOffer:
     return CounterOffer(
         message_id=f"msg_{uuid4().hex}",
         correlation_id=request.correlation_id,
@@ -211,6 +212,8 @@ def build_counter(opening: OfferTerms, request: RequestOffer, proposed: int, now
         offer_id=opening.offer_id,
         proposed_total_price_minor=proposed,
         currency=opening.currency,
+        round=round_number,
+        public_rationale=rationale,
     )
 
 
@@ -335,8 +338,12 @@ class CarrierClient:
         request: RequestOffer,
         proposed: int,
         on_sent: Callable[[CarrierRef, CounterOffer], Awaitable[None]] | None = None,
+        *,
+        round_number: int = 1,
+        rationale: str = "",
     ) -> CounterOutcome:
-        counter = build_counter(opening, request, proposed, self.clock(), self.timeout_s)
+        counter = build_counter(opening, request, proposed, self.clock(), self.timeout_s, round_number=round_number,
+                                rationale=rationale)
         if on_sent:
             await on_sent(carrier, counter)
         started = time.perf_counter()

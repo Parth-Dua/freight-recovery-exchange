@@ -311,7 +311,47 @@ class GatewayService:
                                  session=ctx.session, gateway=ctx.gateway, result=result)
 
     async def negotiate(self, ctx: ChatContext, request_id: str, form: dict) -> dict:
-        """Phase 2: the existing quote round (one counter per carrier). Phase 4 replaces it with sessions."""
+        if os.getenv("TWO_SIDED_NEGOTIATION_ENABLED", "true").lower() != "false":
+            return await self.negotiate_two_sided(ctx, request_id, form)
+        return await self.negotiate_legacy(ctx, request_id, form)
+
+    async def negotiate_two_sided(self, ctx: ChatContext, request_id: str, form: dict) -> dict:
+        """v2: one durable session per eligible carrier, up to two private buyer counters each."""
+        from freight_contracts import CargoSpec
+
+        from freight_exchange.cards import final_offers_carousel
+        from freight_exchange.negotiation_sessions import BuyerPrivate, NegotiationService
+        cargo = CargoSpec(origin_port=form["origin_port"], destination_port=form["destination_port"],
+                          container_type="20GP", quantity=form["quantity"], earliest_departure=form["earliest_departure"],
+                          latest_arrival=form["latest_arrival"], max_total_price_minor=None, currency="USD",
+                          allow_split=form["allow_split"], cargo_class=form["cargo_class"])
+        private = BuyerPrivate(priority=form["priority"], max_total_minor=form["max_total_price_minor"],
+                               must_deliver=form["must_deliver"], latest_arrival=form["latest_arrival"])
+        quotes = self.quotes()
+        result = await NegotiationService(self.repo, quotes.client).run(
+            buyer_id=ctx.buyer_id, chat_session=ctx.session, request_id=request_id, cargo=cargo, private=private,
+            extra={"recovery_allowance_minor": form["recovery_allowance_minor"], "gateway": ctx.gateway})
+        if not result.finals:
+            why = ("no carrier has a sailing with space on that lane by your deadline" if not result.paired
+                   else "no carrier offer fit your constraints")
+            return text(f"Negotiation finished for {request_id}: {why}. Nothing was reserved; say 'ship cargo' to try "
+                        "different dates.")
+        best = min(s.current.total_price_minor for s in result.finals)
+        offers = [{"offer_id": s.current.offer_id, "carrier_name": s.carrier.display_name,
+                   "sailing_id": s.current.sailing_id, "quantity": s.current.quantity,
+                   "total_price_minor": s.current.total_price_minor, "departure_at": s.current.departure_at,
+                   "arrival_at": s.current.arrival_at, "expires_at": s.current.expires_at,
+                   "best": s.current.total_price_minor == best, "negotiated": s.round > 0,
+                   "trace": "Negotiation: " + " → ".join(s.trace) + "."} for s in result.finals]
+        card_id = await self.new_card(ctx, "carousel", "offer_carousel", request_id)
+        sessions = len(result.sessions)
+        return final_offers_carousel(
+            request_id=request_id, offers=offers, card_instance_id=card_id,
+            header=(f"Your buyer agent negotiated with {sessions} carrier agent(s) in parallel (up to two counters "
+                    f"each, your limits kept private). {len(offers)} final offer(s), ranked for your priority."))
+
+    async def negotiate_legacy(self, ctx: ChatContext, request_id: str, form: dict) -> dict:
+        """Rollback path: the Part 1 quote round (one counter per carrier)."""
         from freight_contracts import CargoSpec
 
         from freight_exchange.cards import final_offers_carousel

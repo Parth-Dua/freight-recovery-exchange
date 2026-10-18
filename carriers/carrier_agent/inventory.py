@@ -113,6 +113,14 @@ class CarrierInventory:
                 (offer_id, self.carrier_id))).fetchone()
         return LoggedOffer(*row) if row else None
 
+    async def opening_total(self, negotiation_id: str) -> int | None:
+        """Our round-1 price in this negotiation: concessions are always measured from it."""
+        async with self._pool.connection() as conn:
+            row = await (await conn.execute(
+                "SELECT total_price_minor FROM carrier_offer_log WHERE carrier_id = %s AND negotiation_id = %s "
+                "AND round = 1 ORDER BY created_at LIMIT 1", (self.carrier_id, negotiation_id))).fetchone()
+        return row[0] if row else None
+
     async def claim_counter(self, offer_id: str) -> bool:
         """Atomically use the single counter allowed on this offer. False if already used."""
         async with self._pool.connection() as conn:

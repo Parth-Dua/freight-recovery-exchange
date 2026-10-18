@@ -2,15 +2,15 @@
 
 Updated as the v2 phases (`docs/specs_2/`) progress. Only things that need **you** are here.
 
-## Status (2026-10-18 ~02:30 PDT)
+## Status (2026-10-18 00:50 PDT)
 
 | Phase | Built + tested locally | Live ASI:One check (you) |
 |---|---|---|
 | 1 — uAgent gateway | ✅ both protocol manifests published | ⏳ **blocked on mailbox connect (alert 1)** |
 | 2 — Interactive Cards (form → carousel → review → receipt; recovery cards) | ✅ full journey vs live carriers | ⏳ |
 | 3 — Fetch FET testnet fee | ✅ real testnet transfers verified on-chain, paid bookings confirmed | ⏳ needs ASI:One wallet (alert 2) |
-| 4 — Two-sided negotiation | in progress | — |
-| 5 — Recovery clearing + release | not started | — |
+| 4 — Two-sided negotiation (≤2 counters/carrier, private strategies) | ✅ live carriers + real testnet paid booking | ⏳ |
+| 5 — Recovery clearing + release | in progress | — |
 
 ## Needs you
 
@@ -35,8 +35,8 @@ In ASI:One, open a **new chat with the gateway agent** and:
 1. `I need to ship cargo` → a **form card** (origin, destination, containers, arrive-by, ready-from, split,
    cargo class, private max price, priority, must-deliver, auto-rebook limit). Fill it (Jebel Ali → Mumbai,
    1–2 containers, a deadline 3–4 days out) and submit.
-2. A text reply says the buyer agent is negotiating; ~15–30 s later an **offers carousel** arrives in the
-   same chat. Click **Choose this offer**.
+2. A text reply says the buyer agent is negotiating; ~15–40 s later an **offers carousel** arrives in the
+   same chat, each offer showing its negotiation trace (opened → countered → final). Click **Choose this offer**.
 3. A **review card** shows simulated freight and the separate 0.1 testnet FET service fee. Click
    **Confirm and pay**.
 4. ASI:One should show a **payment request** (0.1 testnet FET). Approve it with your testnet wallet.
