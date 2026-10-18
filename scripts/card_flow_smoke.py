@@ -56,12 +56,47 @@ def main(api: str, quantity: int, pay: bool = False) -> None:
     submit["card_instance_id"] = bad["card_payload"]["submit_cta"]["selection"]["card_instance_id"]
     print("3 submit ->", say(json.dumps(submit))["text"][:110])
     print("  replayed submit ->", say(json.dumps(submit)).get("narration", "")[:70])
-    carousel = outbox()[0]
-    items = carousel["card_payload"]["items"] if carousel.get("card_kind") == "carousel" else []
-    print("4 carousel:", carousel.get("card_kind") or carousel.get("text"),
-          [(i["title"], i["subtitle"]) for i in items])
+    def flat(results):
+        for r in results:
+            yield r
+            yield from flat(r.get("followups") or [])
+
+    seen, carousel, index = [], None, None
+    end = time.time() + 150
+    while carousel is None and time.time() < end:
+        for r in flat(outbox()):
+            seen.append(r)
+            if r.get("card_kind") == "carousel":
+                carousel = r
+            elif r.get("card_kind") == "detail" and r["card_payload"]["title"] == "How your agent negotiated":
+                index = r
+            elif r.get("kind") == "TEXT":
+                print("  pushed:", r["text"][:100])
+    items = carousel["card_payload"]["items"] if carousel else []
+    print("4 carousel:", [(i["title"], i["subtitle"]) for i in items])
     if not items:
         return
+    if index is not None:
+        print("  transcript index (sent before the carousel):",
+              [(r["label"], r["value"]) for r in index["card_payload"]["summary_rows"]])
+        view = index["card_payload"]["ctas"][0]["selection"]
+        t0 = time.time()
+        detail = say(json.dumps(view))
+        print(f"  view transcript ({time.time() - t0:.2f}s):", detail["card_payload"]["title"])
+        for r in detail["card_payload"]["summary_rows"]:
+            print(f"     {r['label']}: {r['value']}")
+        print("  ctas:", [c["label"] for c in detail["card_payload"]["ctas"]])
+        print("  other buyer opens it ->", say(json.dumps(view), who="agent1qintruder")["text"][:80])
+        back = next(c["selection"] for c in detail["card_payload"]["ctas"] if c["selection"]["action"] == "back_to_offers")
+        again = say(json.dumps(back))
+        print("  back to offers ->", again.get("card_kind"), len(again["card_payload"]["items"]), "offers, same card:",
+              again["card_payload"]["items"][0]["primary_cta"]["selection"]["card_instance_id"]
+              == items[0]["primary_cta"]["selection"]["card_instance_id"])
+        choose = next((c["selection"] for c in detail["card_payload"]["ctas"]
+                       if c["selection"]["action"] == "select_offer"), None)
+        if choose is not None:  # book straight from the transcript: same path as the carousel
+            items = [i for i in items if i["primary_cta"]["selection"]["offer_id"] == choose["offer_id"]] + \
+                    [i for i in items if i["primary_cta"]["selection"]["offer_id"] != choose["offer_id"]]
     pick = items[0]["primary_cta"]["selection"]
     print("  other buyer clicks it ->", say(json.dumps(pick), who="agent1qintruder")["text"][:80])
     review = say(json.dumps(pick))

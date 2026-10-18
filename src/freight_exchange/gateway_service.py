@@ -25,7 +25,7 @@ from freight_exchange.repository import Repository, _event
 FET_DECIMALS = 18  # 1 FET = 10**18 atestfet on the Fetch stable testnet
 SHIP_INTENT = re.compile(
     r"^(start|new shipment|ship cargo|book cargo)$|\b(ship|send|move|book)\b.{0,40}\b(cargo|containers?|freight|shipment)\b"
-    r"|\bi (have|need to ship) cargo\b", re.IGNORECASE)
+    r"|\bi (have|need to ship) cargo\b|\b(freight|shipping|container) (quotes?|rates?)\b", re.IGNORECASE)
 MENTION = re.compile(r"@[\w.-]+")
 PAID = re.compile(r"(i\s*(have|'ve)\s+)?(just\s+)?(paid|payment\s+(done|made|complete|completed|sent)|done paying)[.!]*")
 
@@ -116,7 +116,7 @@ def _when(value, field: str, required: bool) -> datetime | None:
 
 
 IDS = {"offer_id": re.compile(r"\b(off_[a-z]+_[0-9a-f]{6,})\b"), "approval_id": re.compile(r"\b(apr_rec_[0-9a-f]+_BK-[\w-]+)\b"),
-       "request_id": re.compile(r"\b(req_[0-9a-f]{6,})\b")}
+       "request_id": re.compile(r"\b(req_[0-9a-f]{6,})\b"), "session_id": re.compile(r"\b(neg_[0-9a-f]{16})\b")}
 
 
 class GatewayService:
@@ -179,7 +179,7 @@ class GatewayService:
             return await self.on_action(ctx, action)
         plain = MENTION.sub("", ctx.text).strip()
         lowered = plain.lower()
-        if SHIP_INTENT.search(plain) and not re.search(r"\d", plain):
+        if SHIP_INTENT.search(plain):  # incl. detailed asks routed by ASI:One: the form collects them precisely
             return await self.cargo_form(ctx)
         if PAID.fullmatch(lowered):
             return await self.check_paid(ctx)
@@ -196,6 +196,19 @@ class GatewayService:
         """Planner-mediated clicks arrive as prose that names the IDs; never guess between several options."""
         lowered = plain.lower()
         offer = IDS["offer_id"].search(plain)
+        session = IDS["session_id"].search(plain)
+        if re.search(r"\b(negotiat\w*|transcript)\b", lowered) and not re.search(r"\brecover", lowered):
+            if session:
+                return {"action": "view_negotiation", "session_id": session.group(1)}
+            if offer:
+                return {"action": "view_negotiation", "offer_id": offer.group(1)}
+            named = re.search(r"\b(atlas|beacon|cove|meridian|dhow)\b", lowered)
+            if named:
+                return {"action": "view_negotiation", "carrier": named.group(1)}
+        if re.fullmatch(r"(go )?back( to (the )?offers)?[.!]?", lowered):
+            return {"action": "back_to_offers"}
+        if re.search(r"\brecovery negotiation", lowered):
+            return {"action": "view_recovery_negotiations"}
         if offer and re.search(r"\b(select|choose|chose|pick|picked|selected|want|take)\b", lowered):
             return {"action": "select_offer", "offer_id": offer.group(1)}
         if re.fullmatch(r"(yes,? )?(confirm|confirm and pay|pay|book it|confirm booking)[.!]?", lowered):
@@ -258,7 +271,9 @@ class GatewayService:
         log_event("gateway_card_action", action=name, sender=ctx.sender, session=ctx.session, prose=from_prose)
         handler = {"submit_cargo_request": self.submit_cargo_request, "select_offer": self.select_offer,
                    "confirm_booking": self.confirm_booking, "cancel_booking": self.cancel_booking,
-                   "approve_recovery": self.decide_recovery, "decline_recovery": self.decide_recovery}.get(name)
+                   "approve_recovery": self.decide_recovery, "decline_recovery": self.decide_recovery,
+                   "view_negotiation": self.view_negotiation, "back_to_offers": self.back_to_offers,
+                   "view_recovery_negotiations": self.view_recovery_negotiations}.get(name)
         if handler is None:
             return text("That card has expired or isn't one I recognise; nothing was changed.")
         return await handler(ctx, action)
@@ -339,9 +354,18 @@ class GatewayService:
         private = BuyerPrivate(priority=form["priority"], max_total_minor=form["max_total_price_minor"],
                                must_deliver=form["must_deliver"], latest_arrival=form["latest_arrival"])
         quotes = self.quotes()
+        async def progress(*, quoted: int, contacted: int) -> None:
+            if quoted and os.getenv("NEGOTIATION_PROGRESS_ENABLED", "true").lower() != "false":
+                await self.store.enqueue(
+                    event_key=f"progress:{request_id}:openings", buyer_id=ctx.buyer_id, recipient=ctx.sender,
+                    session=ctx.session, gateway=ctx.gateway,
+                    result=text(f"{quoted} of {contacted} carriers quoted. Your agent is countering now; final "
+                                "offers in a few seconds."))
+
         result = await NegotiationService(self.repo, quotes.client).run(
             buyer_id=ctx.buyer_id, chat_session=ctx.session, request_id=request_id, cargo=cargo, private=private,
-            extra={"recovery_allowance_minor": form["recovery_allowance_minor"], "gateway": ctx.gateway})
+            extra={"recovery_allowance_minor": form["recovery_allowance_minor"], "gateway": ctx.gateway},
+            on_openings=progress)
         if not result.finals:
             why = ("no carrier has a sailing with space on that lane by your deadline" if not result.paired
                    else "no carrier offer fit your constraints")
@@ -353,14 +377,128 @@ class GatewayService:
                    "total_price_minor": s.current.total_price_minor, "departure_at": s.current.departure_at,
                    "arrival_at": s.current.arrival_at, "expires_at": s.current.expires_at,
                    "best": s.current.total_price_minor == best, "negotiated": s.round > 0,
-                   "opening_minor": s.opening_minor, "counters": s.round} for s in result.finals]
+                   "opening_minor": s.opening_minor if s.opening_comparable else None,
+                   "counters": s.round} for s in result.finals]
         card_id = await self.new_card(ctx, "carousel", "offer_carousel", request_id)
         sessions = len(result.sessions)
-        return final_offers_carousel(
+        carousel = final_offers_carousel(
             request_id=request_id, offers=offers, card_instance_id=card_id,
             header=(f"Your buyer agent negotiated with {sessions} carrier{'s' if sessions != 1 else ''} in parallel "
                     f"and kept your limits private. {len(offers)} final offer{'s' if len(offers) != 1 else ''}, "
                     "ranked for your priority."))
+        return await self.prerender_transcripts(ctx, request_id, carousel, card_id, offers)
+
+    # ---- negotiation transparency (UX-NEG-001) ---------------------------------------------
+    async def prerender_transcripts(self, ctx: ChatContext, request_id: str, carousel: dict, carousel_card_id: str,
+                                    offers: list[dict]) -> dict:
+        """Render every carrier's transcript now, while the buyer reads the offers, so opening one is instant.
+        Never blocks the offers: any failure here just sends the carousel alone."""
+        from freight_exchange import negotiation_trace as nt
+        from freight_exchange.cards import negotiation_detail_card, negotiation_index_card
+        if not nt.enabled():
+            return carousel
+        try:
+            traces = await nt.request_traces(self.repo.pool, buyer_id=ctx.buyer_id, request_id=request_id)
+            if not traces:
+                return carousel
+            view_id = await self.new_card(ctx, "detail", "negotiation_view", request_id)
+            shown = {o["offer_id"] for o in offers}
+            for t in traces:
+                card_result = negotiation_detail_card(t, request_id=request_id, view_card_id=view_id,
+                                                      carousel_card_id=carousel_card_id if t.offer_id in shown else None)
+                await nt.save_card(self.repo.pool, trace_key=f"offer:{request_id}:{t.session_id}", buyer_id=ctx.buyer_id,
+                                   kind="offer", request_id=request_id, offer_id=t.offer_id, session_id=t.session_id,
+                                   card=card_result, trace=t.as_dict())
+            await nt.save_card(self.repo.pool, trace_key=f"carousel:{request_id}", buyer_id=ctx.buyer_id,
+                               kind="carousel", request_id=request_id, card=carousel,
+                               trace={"carousel_card_id": carousel_card_id,
+                                      "expires": {o["offer_id"]: o["expires_at"].isoformat() for o in offers}})
+            index = negotiation_index_card(traces, request_id=request_id, view_card_id=view_id)
+            log_event("negotiation_transcripts_ready", request_id=request_id, transcripts=len(traces))
+            return {"kind": "BUNDLE", "followups": [index, carousel]}  # the offers stay the last, actionable card
+        except Exception as exc:
+            log_event("negotiation_transcripts_failed", logging.WARNING, request_id=request_id,
+                      error_type=type(exc).__name__)
+            return carousel
+
+    async def _view_card(self, ctx: ChatContext, action: dict, purpose: str) -> str | None:
+        """Read-only ownership check (never spends the card): the resource this buyer's view card is about."""
+        async with self.repo.pool.connection() as conn:
+            if action.get("card_instance_id"):
+                row = await (await conn.execute(
+                    "SELECT resource_id FROM card_instances WHERE card_instance_id = %s AND buyer_id = %s "
+                    "AND purpose = %s", (action["card_instance_id"], ctx.buyer_id, purpose))).fetchone()
+            else:
+                row = await (await conn.execute(
+                    "SELECT resource_id FROM card_instances WHERE buyer_id = %s AND purpose = %s "
+                    "ORDER BY created_at DESC LIMIT 1", (ctx.buyer_id, purpose))).fetchone()
+        return row[0] if row else None
+
+    async def view_negotiation(self, ctx: ChatContext, action: dict) -> dict:
+        """Read-only: serve the pre-rendered transcript (one owner-scoped query); zero writes, zero agent sends."""
+        from freight_exchange import negotiation_trace as nt
+        stored = await nt.load_offer_views(self.repo.pool, buyer_id=ctx.buyer_id,
+                                           view_card_id=action.get("card_instance_id"))
+        if not stored or (action.get("request_id") and action["request_id"] != stored[0]["request_id"]):
+            return text("I don't have a negotiation transcript for that. Your offers card is above.")
+        wanted = [c for c in stored if (action.get("session_id") and c["session_id"] == action["session_id"])
+                  or (action.get("offer_id") and c["offer_id"] == action["offer_id"])]
+        if not wanted and action.get("carrier"):
+            name = str(action["carrier"]).lower()
+            wanted = [c for c in stored if c["carrier"].lower().startswith(name) or c["carrier_id"] == name]
+        if len(wanted) != 1:
+            names = ", ".join(c["carrier"].split()[0] for c in stored)
+            return text(f"Which carrier's negotiation? I have transcripts for: {names}.")
+        row, card_result = wanted[0], wanted[0]["card"]
+        selection_cta = next((c for c in card_result["card_payload"]["ctas"]
+                              if c["selection"]["action"] == "select_offer"), None)
+        if selection_cta is not None:
+            why = {"SUPERSEDED": "These offers were replaced by a newer request",
+                   "USED": "You've already chosen an offer for this request"}.get(row["carousel_status"])
+            if why is None and not row["offer_live"]:
+                why = "This offer has expired"
+            if why:  # history stays viewable; choosing from here closes with the offer (select re-checks anyway)
+                payload = dict(card_result["card_payload"])
+                payload["ctas"] = [c for c in payload["ctas"] if c is not selection_cta]
+                payload["summary_rows"] = payload["summary_rows"] + [{"label": "Choosing", "value": why}]
+                card_result = {**card_result, "card_payload": payload}
+        return card_result
+
+    async def back_to_offers(self, ctx: ChatContext, action: dict) -> dict:
+        from freight_exchange import negotiation_trace as nt
+        request_id = await self._view_card(ctx, action, "negotiation_view")
+        if request_id is None or (action.get("request_id") and action["request_id"] != request_id):
+            return text("I don't have offers for that. Say 'ship cargo' to get quotes.")
+        stored = await nt.load_cards(self.repo.pool, buyer_id=ctx.buyer_id, kind="carousel", request_id=request_id)
+        if not stored:
+            return text("Your offers card is above.")
+        meta, carousel = stored[0]["trace"], stored[0]["card"]
+        async with self.repo.pool.connection() as conn:
+            status = await (await conn.execute("SELECT status FROM card_instances WHERE card_instance_id = %s",
+                                               (meta["carousel_card_id"],))).fetchone()
+        if status is None or status[0] == "SUPERSEDED":
+            return text("These offers were replaced by a newer request; its offers card is above.")
+        if status[0] == "USED":
+            return text("You've already chosen an offer for this request; continue from the review card above.")
+        now = datetime.now(timezone.utc)
+        live = {oid for oid, exp in meta["expires"].items() if datetime.fromisoformat(exp) > now}
+        items = [i for i in carousel["card_payload"]["items"] if i["id"] in live]
+        if not items:
+            return text("These offers have expired. Say 'ship cargo' for fresh quotes; nothing was reserved.")
+        return {**carousel, "card_payload": {**carousel["card_payload"], "items": items}}
+
+    async def view_recovery_negotiations(self, ctx: ChatContext, action: dict) -> dict:
+        from freight_exchange import negotiation_trace as nt
+        resource = await self._view_card(ctx, action, "recovery_trace")
+        if resource is None:
+            return text("I don't have a recovery negotiation for that.")
+        recovery_id, _, booking_id = resource.partition(":")
+        if (action.get("booking_id") and action["booking_id"] != booking_id) or \
+                (action.get("recovery_id") and action["recovery_id"] != recovery_id):
+            return text("I don't have a recovery negotiation for that.")
+        stored = await nt.load_cards(self.repo.pool, buyer_id=ctx.buyer_id, kind="recovery", recovery_id=recovery_id,
+                                     booking_id=booking_id)
+        return stored[0]["card"] if stored else text("That recovery negotiation isn't available yet.")
 
     async def negotiate_legacy(self, ctx: ChatContext, request_id: str, form: dict) -> dict:
         """Rollback path: the Part 1 quote round (one counter per carrier)."""

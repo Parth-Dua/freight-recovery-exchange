@@ -39,6 +39,31 @@ class GatewayRecoveryNotifier:
                                           session=session, gateway=gateway, result=result)
         log_event("recovery_card_queued", booking_id=booking.booking_id, key=key, queued=queued)
 
+    async def _recovery_trace_cta(self, service, booking: DisruptedBooking, binding, recovery_run_id: str,
+                                  chosen: str | None) -> list[dict]:
+        """Pre-render this buyer's own recovery transcript; a button opens it instantly. Never blocks the result."""
+        from freight_exchange import negotiation_trace as nt
+        if not nt.enabled():
+            return []
+        try:
+            traces = await nt.recovery_traces(self.pool, buyer_id=booking.buyer_id, recovery_id=recovery_run_id,
+                                              booking_id=booking.booking_id)
+            if not traces:
+                return []
+            await nt.save_card(self.pool, trace_key=f"recovery:{recovery_run_id}:{booking.booking_id}",
+                               buyer_id=booking.buyer_id, kind="recovery", recovery_id=recovery_run_id,
+                               booking_id=booking.booking_id,
+                               card=cards.recovery_trace_card(traces, booking_id=booking.booking_id, chosen=chosen),
+                               trace={"sessions": [t.as_dict() for t in traces]})
+            card_id = await service.new_card(booking.buyer_id, "detail", "recovery_trace",
+                                             f"{recovery_run_id}:{booking.booking_id}", session=binding[1])
+            return [{"label": "See recovery negotiation",
+                     "selection": {"action": "view_recovery_negotiations", "recovery_id": recovery_run_id,
+                                   "booking_id": booking.booking_id, "card_instance_id": card_id}}]
+        except Exception as exc:
+            log_event("recovery_trace_failed", booking_id=booking.booking_id, error_type=type(exc).__name__)
+            return []
+
     async def cancelled(self, *, withdrawal_event_id, sailing_id, stranded) -> None:
         bound, other = await self._split(stranded)
         if other and self.legacy:
@@ -99,11 +124,16 @@ class GatewayRecoveryNotifier:
                                                     f"{names.get(a.carrier_id, a.carrier_id)} {a.sailing_id}"))
                         rows.append(("Arrives", a.arrival_at.strftime("%b %-d, %H:%M UTC")))
                 rows.append(("Status", "RECOVERED — confirmed by the carrier"))
-                result = cards.status_detail("Rebooked", rows, narration)
+                chosen = ", ".join(f"{names.get(a.carrier_id, a.carrier_id)} {a.sailing_id} ({a.quantity}×20GP)"
+                                   for a in (outcome.assignments if outcome else ())
+                                   if a.booking_id == booking.booking_id)
+                result = cards.status_detail("Rebooked", rows, narration, ctas=await self._recovery_trace_cta(
+                    service, booking, binding, recovery_run_id, chosen or None))
             else:
                 result = cards.status_detail("Not recovered", [("Booking", booking.booking_id),
                                                                ("Status", "UNRECOVERED — nothing new booked or charged")],
-                                             narration)
+                                             narration, ctas=await self._recovery_trace_cta(
+                                                 service, booking, binding, recovery_run_id, None))
             headline = {m.NEEDS_APPROVAL: "🔔 ACTION NEEDED: approve your replacement sailing",
                         m.REBOOKED: "✅ REBOOKED: your cargo has a new sailing"}.get(kind, "❌ RECOVERY UPDATE")
             result = {**result, "narration": f"{headline}\n\n{result['narration']}"}

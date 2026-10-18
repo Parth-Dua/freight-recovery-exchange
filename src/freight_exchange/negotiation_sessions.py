@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -143,6 +144,13 @@ class Session:
     trace: list[str] = field(default_factory=list)
     reason: str = ""
     opening_minor: int | None = None  # the carrier's round-0 total, for the buyer-facing summary
+    opening_terms: tuple | None = None  # (sailing, quantity, currency) of that opening quote
+
+    @property
+    def opening_comparable(self) -> bool:
+        """A price change is only meaningful against the same sailing, quantity and currency (UX-NEG-001 3.1)."""
+        return bool(self.current and self.opening_terms == (self.current.sailing_id, self.current.quantity,
+                                                            self.current.currency))
     booking_id: str | None = None  # recovery sessions: the displaced booking this session is for
 
 
@@ -161,7 +169,7 @@ class NegotiationService:
         self.clock = clock
 
     async def run(self, *, buyer_id: str, chat_session: str, request_id: str, cargo: CargoSpec,
-                  private: BuyerPrivate, extra: dict | None = None) -> NegotiationResult:
+                  private: BuyerPrivate, extra: dict | None = None, on_openings=None) -> NegotiationResult:
         correlation = f"flow_{uuid4().hex[:12]}"
         await self.repo.create_request(cargo, request_id=request_id, correlation_id=correlation, buyer_id=buyer_id,
                                        requirements={"cargo": json.loads(cargo.json()), "channel": "gateway-card",
@@ -183,7 +191,7 @@ class NegotiationService:
         for s in sessions:
             s.request = s.request.copy(update={"negotiation_id": s.session_id})
             await self._open(s, buyer_id, request_id, expires)
-        await self.negotiate_group(sessions, private, cargo.quantity, expires)
+        await self.negotiate_group(sessions, private, cargo.quantity, expires, on_openings=on_openings)
 
         finals = [s for s in sessions if s.current is not None and s.current.expires_at > self.clock()
                   and (private.max_total_minor is None or s.current.total_price_minor <= private.max_total_minor)]
@@ -198,7 +206,7 @@ class NegotiationService:
         return NegotiationResult(request_id, sessions, finals, len(pairs))
 
     async def negotiate_group(self, sessions: list[Session], private: BuyerPrivate, quantity: int,
-                              deadline: datetime) -> None:
+                              deadline: datetime, on_openings=None) -> None:
         """Opening offers in parallel, then up to two counter rounds; every session ends closed.
         Sessions in one group are rivals of each other (same buyer request / same displaced booking)."""
         exchange = self.client.identity.address
@@ -213,6 +221,11 @@ class NegotiationService:
             await self._opening_outcome(s, out)
 
         await asyncio.gather(*(opening(s) for s in sessions))
+        if on_openings is not None:  # one milestone from verified session state; never blocks negotiation
+            try:
+                await on_openings(quoted=sum(1 for s in sessions if s.current is not None), contacted=len(sessions))
+            except Exception as exc:
+                log_event("negotiation_progress_failed", logging.WARNING, error_type=type(exc).__name__)
         for round_number in (1, 2):
             live = [s for s in sessions if s.status == "OPEN" and s.current is not None]
             if not live:
@@ -232,6 +245,7 @@ class NegotiationService:
         if out.offer is not None:
             s.current = out.offer
             s.opening_minor = out.offer.total_price_minor
+            s.opening_terms = (out.offer.sailing_id, out.offer.quantity, out.offer.currency)
             s.trace.append(f"opened {money(out.offer.total_price_minor)}")
             await self._message(s, "carrier", s.carrier.agent_address, out.offer.message_id, 0, "PROPOSE_OFFER",
                                 {"offer_id": out.offer.offer_id, "sailing_id": out.offer.sailing_id,

@@ -42,9 +42,9 @@ def incoming_text(msg: ChatMessage) -> str:
 
 def build_gateway(*, seed: str, port: int, backend: BackendClient, name: str = "hormuz-exchange") -> Agent:
     agent = Agent(name=name, seed=seed, port=port, mailbox=True, publish_agent_details=True,
-                  description=("Hormuz Exchange (demo): ship cargo with independent carrier agents. Native "
-                               "cards for quotes and booking, Fetch payment for the booking-coordination "
-                               "service, and automatic rebooking when a carrier withdraws a sailing."),
+                  description=("Ocean freight booking and container shipping agent: get shipping quotes from independent "
+                               "carriers, automatic freight rate negotiation, card payment, booking confirmation, and "
+                               "automatic rebooking when a sailing is cancelled."),
                   readme_path=str(README) if README.exists() else None)
     chat = Protocol(spec=chat_protocol_spec)
     payment = Protocol(spec=payment_protocol_spec, role="seller")

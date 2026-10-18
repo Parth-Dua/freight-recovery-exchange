@@ -159,9 +159,9 @@ def booking_receipt(*, booking_id: str, claim_code: str, offer: dict, payment_li
                   terminal=True)
 
 
-def status_detail(title: str, rows: list[tuple[str, str]], narration: str) -> dict:
+def status_detail(title: str, rows: list[tuple[str, str]], narration: str, ctas: list[dict] | None = None) -> dict:
     return result(narration, "detail", {"title": title, "summary_rows": [{"label": k, "value": v} for k, v in rows],
-                                        "ctas": []}, terminal=True)
+                                        "ctas": ctas or []}, terminal=not ctas)
 
 
 def recovery_approval(*, approval_id: str, booking_id: str, rows: list[tuple[str, str]], card_instance_id: str,
@@ -174,3 +174,108 @@ def recovery_approval(*, approval_id: str, booking_id: str, rows: list[tuple[str
                "reject_cta": {"label": "Decline", "selection": {"action": "decline_recovery", **base}}}
     return result(narration, "review", payload,
                   fallback=narration + f" Reply 'approve {booking_id}' or 'decline {booking_id}'.")
+
+
+# ---- negotiation transparency (UX-NEG-001) ------------------------------------------------------
+PRIVACY_NOTE = "Your budget and limits, and each carrier's floor price, were never shared."
+
+
+def _step_row(step, carrier: str, quantity: int | None, sailing: str | None) -> tuple[str, str] | None:
+    price = money(step.price_minor) if step.price_minor is not None else ""
+    k = step.kind
+    if k == "CARRIER_OFFER":
+        return (f"{carrier} opened", f"{price}" + (f" for {quantity}×20GP on {sailing}" if quantity and sailing else ""))
+    if k == "BUYER_COUNTER":
+        return (f"Round {step.round} · your agent proposed", f"{price} — {step.explanation}")
+    if k == "CARRIER_ACCEPTED":
+        return (f"Round {step.round} · {carrier}", f"Accepted {price}")
+    if k == "CARRIER_COUNTER":
+        return (f"Round {step.round} · {carrier}", f"Came back at {price}")
+    if k == "CARRIER_HELD":
+        return (f"Round {step.round} · {carrier}", "Declined the counter; its quote stands")
+    if k == "NO_REPLY":
+        return (f"Round {step.round} · {carrier}", "No valid reply")
+    if k == "DECLINED":
+        return (carrier, "Declined to quote this shipment")
+    if k == "TIMED_OUT":
+        return ("Deadline", "No final offer before the negotiation deadline")
+    if k == "BUYER_ACCEPTED":
+        return ("Your agent", f"Accepted {price}")
+    if k == "FINAL_QUOTE":
+        return ("Final", f"{price} — both counters used; best quote stands")
+    return None
+
+
+def trace_summary(trace) -> str:
+    """One line per carrier: opening -> final with a grounded change, or the actual outcome."""
+    if trace.final_price_minor is None:
+        return trace.outcome
+    if trace.price_improvement_minor:
+        return (f"{money(trace.opening_price_minor)} → {money(trace.final_price_minor)} "
+                f"(−{trace.improvement_pct:g}%) · {trace.outcome}")
+    if trace.comparable_terms and trace.final_price_minor == trace.opening_price_minor:
+        return f"{money(trace.final_price_minor)}, no change from opening · {trace.outcome}"
+    return f"{money(trace.final_price_minor)} final quote · {trace.outcome}"
+
+
+def negotiation_detail_card(trace, *, request_id: str, carousel_card_id: str | None, view_card_id: str) -> dict:
+    carrier = trace.carrier_display_name
+    rows: list[tuple[str, str]] = [("Outcome", trace.outcome)]
+    for step in trace.steps:
+        row = _step_row(step, carrier, trace.quantity, trace.sailing_id)
+        if row:
+            rows.append(row)
+    if trace.price_improvement_minor:
+        rows.append(("Price improvement", f"{money(trace.price_improvement_minor)} ({trace.improvement_pct:g}%) "
+                                          "vs this carrier's opening quote"))
+    elif trace.comparable_terms and trace.final_price_minor == trace.opening_price_minor:
+        rows.append(("Price change", "No change from the opening quote"))
+    if trace.rank == 1:
+        rows.append(("Why it's recommended", "Ranked first for your priority, weighing price against arrival time"))
+    for note in trace.notes:
+        rows.append(("Note", note))
+    rows.append(("Privacy", PRIVACY_NOTE))
+    ctas = []
+    if trace.offer_id and carousel_card_id:
+        ctas.append({"label": "Choose this offer", "primary": True,
+                     "selection": {"action": "select_offer", "request_id": request_id, "offer_id": trace.offer_id,
+                                   "card_instance_id": carousel_card_id}})
+    ctas.append({"label": "Back to offers",
+                 "selection": {"action": "back_to_offers", "request_id": request_id, "card_instance_id": view_card_id}})
+    narration = f"How your agent negotiated with {carrier}: {trace_summary(trace)}."
+    fallback = narration + "\n" + "\n".join(f"- {k}: {v}" for k, v in rows[1:])
+    return result(narration, "detail", {"title": f"How your agent negotiated with {carrier}",
+                                        "summary_rows": [{"label": k, "value": v} for k, v in rows], "ctas": ctas},
+                  fallback=fallback)
+
+
+def negotiation_index_card(traces, *, request_id: str, view_card_id: str) -> dict:
+    """Sent right after the offers carousel (whose items allow one CTA): one tap opens a pre-rendered transcript."""
+    rows = [(t.carrier_display_name, trace_summary(t)) for t in traces]
+    ctas = [{"label": f"{t.carrier_display_name.split()[0]} transcript",
+             "selection": {"action": "view_negotiation", "request_id": request_id, "session_id": t.session_id,
+                           "card_instance_id": view_card_id}} for t in traces]
+    narration = "Want to see how your agent got these prices? Open any carrier's transcript."
+    fallback = narration + "\n" + "\n".join(f"- {k}: {v}" for k, v in rows) + \
+        "\nReply e.g. 'show Atlas negotiation'."
+    return result(narration, "detail", {"title": "How your agent negotiated",
+                                        "summary_rows": [{"label": k, "value": v} for k, v in rows], "ctas": ctas},
+                  fallback=fallback)
+
+
+def recovery_trace_card(traces, *, booking_id: str, chosen: str | None) -> dict:
+    rows: list[tuple[str, str]] = []
+    for t in traces:
+        where = f" · {t.sailing_id}" if t.sailing_id else ""
+        rows.append((f"{t.carrier_display_name}{where}", trace_summary(t)))
+    if chosen:
+        rows.append(("Chosen", chosen))
+    rows.append(("How it was chosen", "All shipments on the cancelled sailing were cleared together: must-deliver "
+                                      "cargo first, then the most shipments recovered, the fewest approvals, the "
+                                      "lowest extra cost, the earliest arrival."))
+    rows.append(("Privacy", "Other shippers' bookings and prices, your auto-rebook limit and carrier floors stay private."))
+    narration = f"How your agent negotiated replacement space for {booking_id}."
+    fallback = narration + "\n" + "\n".join(f"- {k}: {v}" for k, v in rows)
+    return result(narration, "detail", {"title": f"Recovery negotiations for {booking_id}",
+                                        "summary_rows": [{"label": k, "value": v} for k, v in rows], "ctas": []},
+                  terminal=True, fallback=fallback)

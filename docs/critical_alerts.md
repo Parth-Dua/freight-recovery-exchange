@@ -19,7 +19,13 @@ Updated as the v2 phases (`docs/specs_2/`) progress. Only things that need **you
 2. ~~ASI:One testnet FET wallet~~ — replaced (your decision): payment is now **Stripe TEST card checkout over the
    Fetch Payment Protocol** (`PAYMENT_MODE=stripe_test`, default). No wallet needed; card `4242 4242 4242 4242`,
    any future expiry, any CVC. FET stays available as `PAYMENT_MODE=fet_testnet`.
-3. **Submission (only you can):** Devpost + ASI:One Submission Agent, a 3–5 min video, and a shared ASI:One
+3. **ASI:One discovery without @mention (Agentverse, ~5 min, only you can):** the profile README and description
+   are already rewritten for search (published on gateway start). In Agentverse → the agent → set **keywords**
+   (freight, shipping, container shipping, ocean freight, logistics, cargo booking, freight quote, shipping rates,
+   carrier negotiation, supply chain), upload an **avatar**, keep the handle, keep the agent running, and get
+   **10+ interactions** (chat with it a few times, e.g. "get me freight quotes from Jebel Ali to Mumbai"). Then try
+   that query in ASI:One without the handle. Ranking is Agentverse's; it can take time to pick up.
+4. **Submission (only you can):** Devpost + ASI:One Submission Agent, a 3–5 min video, and a shared ASI:One
    chat URL. README already has the badges, agent addresses and setup.
 
 ## Test it — the demo script (≈5 min)
@@ -30,11 +36,15 @@ ATL-101, $300 auto-rebook limit; Buyer C: DHW-571, unaffected). Services: `./scr
 1. ASI:One, new chat: `@freight-disruption I need to ship cargo` → form: Jebel Ali → Mumbai, **2**, arrive no
    later than **Oct 23** (the date `seed` prints), cargo ready Any time, split **off**, General, budget blank,
    Balanced, must-deliver optional, auto-rebook limit **600**.
-2. Carousel: Atlas ATL-101 and Beacon BEA-201 (Cove has 1 slot, Meridian arrives too late). Choose **Atlas ATL-101**.
+2. ~5 s in: "2 of 2 carriers quoted. Your agent is countering now". Then **How your agent negotiated** (one row
+   per carrier, opening → final) followed by the offers carousel: Atlas ATL-101 and Beacon BEA-201 (Cove has 1
+   slot, Meridian arrives too late). Optional: tap **Atlas transcript** (pre-rendered, ~1 s) → **Choose this
+   offer** books straight from it, or **Back to offers**. Choose **Atlas ATL-101**.
 3. Review → **Confirm and pay** → card `4242 4242 4242 4242` → **Booking confirmed** card.
 4. Withdraw **ATL-101** at http://localhost:8800 → ⚠️ SAILING CANCELLATION ALERT card → ~20 s later 🔔 approval
    card: Beacon BEA-201, ≈$6,470 vs what you paid (≈+$1,200, over your $600) → **Approve** → ✅ REBOOKED card.
    Meanwhile Buyer B was auto-rebooked onto Cove COV-301 (+$95, within $300); Buyer C untouched.
+   The ✅ REBOOKED card has **See recovery negotiation**: your booking's replacement negotiations only.
    (Auto path instead: set the limit to 2000 → straight to ✅ REBOOKED. Verified: `demo.py rehearse` PASS.)
 
 **Reproduce the scripted recovery scenario (no ASI:One needed):**

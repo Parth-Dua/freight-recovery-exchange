@@ -341,3 +341,21 @@
 - Verified over the real Agentverse network (not ASI:One): a throwaway local uAgent sent `I need to ship cargo`
   to `agent1q0ktnrh…ymxm8`; the gateway received it via its mailbox, acknowledged, and replied with the
   shipment form card (Chat Protocol text + card metadata). Live ASI:One rendering still to be checked by Parth.
+
+### 2026-10-18 — UX-NEG-001 negotiation transparency (docs/specs_2/negotiation-transparency-asi-one.md)
+- `negotiation_trace.py`: buyer-scoped trace DTO built only from persisted `negotiation_sessions`,
+  `negotiation_messages` and `offers` (owner filter inside the SQL); improvement shown only vs the same carrier's
+  opening quote on the same sailing/quantity/currency and only when lower; missing history reported, never filled.
+- Pre-rendered: every carrier's transcript card (and the recovery transcript per displaced booking) is rendered at
+  negotiation close into `negotiation_trace_cards` (migration 013); a click is one owner-scoped query (~1.2 s
+  round trip through the API, mostly the generic per-message bookkeeping). Viewing never spends the offers card.
+- Navigation: "How your agent negotiated" index card is sent just BEFORE the carousel (the carousel item schema has
+  one CTA, so `View negotiation` lives on the index; the carousel stays the last, actionable card). Transcript →
+  `Choose this offer` (same one-time carousel card, revalidated) or `Back to offers` (same card if still current;
+  expired items dropped; used/superseded explained). Recovery: `See recovery negotiation` on Rebooked/Not-recovered.
+- P1 progress: one milestone push after opening quotes ("N of M carriers quoted; countering now").
+- Live via the internal API (not ASI:One): transcript matched Tiger (Atlas $5,330 → $5,010, round 1 accepted),
+  another buyer refused, Back to offers returned the same card, choose-from-transcript → review → Stripe request.
+  Recovery transcripts built from rehearsal `negotiation_sessions`; other buyer sees 0 sessions. 11 unit tests.
+- Discovery: gateway profile README/description rewritten for Agentverse search; any shipping intent (incl.
+  detailed asks routed by ASI:One) opens the form card.
