@@ -125,6 +125,9 @@ def main() -> int:
             description=description,
             readme=readme,
             active=True,
+            # False keeps the carrier's real endpoint in its Agentverse/Almanac record. True would advertise the
+            # Agentverse proxy instead, and the exchange's sync negotiation requests would go there and fail.
+            track_interactions=False,
         )
         print(f"\n{cid}: {request.name}  {address}")
         if not args.publish:
