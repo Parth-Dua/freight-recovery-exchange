@@ -9,7 +9,6 @@ from freight_disruption.events import SOURCE, emit_event
 from freight_disruption.seam import TigerDisruptionSeam
 from freight_disruption.stranded import (
     NO_DEADLINE,
-    UNSTORED_RECOVERY_ALLOWANCE_MINOR,
     PendingWithdrawal,
     StrandedRow,
     pending_withdrawals,
@@ -28,7 +27,6 @@ from freight_disruption.withdrawal import (
 __all__ = [
     "NO_DEADLINE",
     "SOURCE",
-    "UNSTORED_RECOVERY_ALLOWANCE_MINOR",
     "PendingWithdrawal",
     "RejectionCode",
     "StrandedRow",
