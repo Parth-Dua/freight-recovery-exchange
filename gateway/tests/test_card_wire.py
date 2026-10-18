@@ -36,3 +36,11 @@ def test_backend_results_map_to_messages():
     assert message_for({"kind": "TEXT", "text": "hi"}).content[0].text == "hi"
     assert len(message_for({"kind": "CARD", "narration": "n", "card_kind": "form", "card_payload": FORM}).content) == 2
     assert message_for({"kind": "UNKNOWN"}) is None
+
+
+def test_read_only_cards_still_render_as_cards():
+    """ASI:One shows a block as a card only when requires_card_interaction == "true"; read-only uses is_terminal."""
+    msg = card_message("Booked.", "detail", {"title": "Booking confirmed", "summary_rows": [], "ctas": []},
+                       terminal=True)
+    meta = msg.content[1].metadata
+    assert meta["requires_card_interaction"] == "true" and meta["is_terminal"] == "true"

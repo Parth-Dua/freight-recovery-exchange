@@ -31,7 +31,7 @@ TRANSACTIONAL = [
     "chat_turns", "booking_intents", "payment_records", "booking_slots", "recovery_assignments",
     "recovery_legs", "recovery_offers", "negotiation_messages", "negotiation_sessions", "recovery_runs", "bookings", "hold_slots", "holds", "offer_selections", "carrier_offer_log",
     "agent_messages", "offers", "cargo_requests", "disruption_events", "market_events", "market_snapshots",
-    "card_instances", "chat_outbox", "gateway_events",
+    "negotiation_trace_cards", "card_instances", "chat_outbox", "gateway_events",
 ]
 
 

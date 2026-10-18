@@ -35,6 +35,7 @@ PAYMENT_DEADLINE_MARGIN = timedelta(minutes=3)  # leave time to verify and confi
 MAX_PAYMENT_WINDOW = timedelta(minutes=10)
 STRIPE_PAYMENT_WINDOW = timedelta(minutes=25)  # card entry takes longer; still inside the carrier hold
 TEST_CARD = "4242 4242 4242 4242"
+TOPUP_WINDOW = timedelta(hours=23)  # Stripe sessions live at most 24 h; no carrier hold depends on it
 MODES = ("stripe_test", "fet_testnet", "dev")
 
 
@@ -260,6 +261,97 @@ class FetBookingService:
             row = await cur.fetchone()
             return dict(zip([c.name for c in cur.description], row)) if row else None
 
+    async def request_topup(self, *, buyer_id: str, chat_session: str, original_booking_id: str,
+                            replacement_booking_id: str, amount_minor: int, currency: str, label: str) -> dict | None:
+        """Recovery replaced a booking at a higher freight price: ask for the difference by card (Stripe TEST)
+        after the replacement is confirmed. One payment per replacement booking, however often this is called."""
+        if amount_minor <= 0 or payment_mode() != "stripe_test":
+            return None
+        async with self.repo.pool.connection() as conn:
+            cur = await conn.execute("SELECT * FROM payment_records WHERE booking_id = %s AND provider = 'stripe' "
+                                     "AND intent_id IS NULL", (replacement_booking_id,))
+            existing = await cur.fetchone()
+            if existing:
+                row = dict(zip([c.name for c in cur.description], existing))
+                if row["status"] not in ("REQUESTED", "COMMIT_RECEIVED"):
+                    return None
+                return await self._topup_request(row, label)
+        reference, payment_id = f"stripetop_{uuid4().hex[:16]}", f"pay_{uuid4().hex[:16]}"
+        deadline = datetime.now(timezone.utc) + TOPUP_WINDOW
+        common = dict(intent_id=reference, request_id=original_booking_id, offer_id=replacement_booking_id,
+                      freight_minor=amount_minor, fee_minor=0, currency=currency, expires_at=deadline,
+                      freight_label=f"Fare difference: {label}", reference=reference)
+        embedded = await self.stripe.create_checkout(**common, embedded=True)
+        hosted = await self.stripe.create_checkout(**common, embedded=False)
+        async with self.repo.pool.connection() as conn, conn.transaction():
+            await conn.execute(
+                """INSERT INTO payment_records (payment_id, booking_id, provider, reference, purpose, amount_minor,
+                       currency, status, method, network, funds_amount, funds_currency, sender_agent_address,
+                       chat_session_id, deadline_at, livemode, fee_minor, freight_minor, checkout_url,
+                       stripe_session_ids, verification, updated_at)
+                   VALUES (%s, %s, 'stripe', %s, 'recovery fare difference (Stripe TEST)', %s, %s, 'REQUESTED',
+                           'stripe', 'stripe-test', %s, %s, %s, %s, %s, false, 0, %s, %s, %s, %s, now())""",
+                (payment_id, replacement_booking_id, reference, amount_minor, currency, f"{amount_minor / 100:.2f}",
+                 currency, buyer_id, chat_session, deadline, amount_minor, hosted.url,
+                 [embedded.session_id, hosted.session_id], _jsonb({"replaces_booking_id": original_booking_id,
+                                                                   "label": label})))
+            await _event(conn, "PAYMENT_REQUESTED", "payment", payment_id, correlation_id=reference,
+                         payload={"provider": "stripe", "purpose": "recovery_fare_difference", "amount_minor": amount_minor,
+                                  "currency": currency, "booking_id": replacement_booking_id,
+                                  "replaces_booking_id": original_booking_id, "reference": reference})
+        row = await self._payment(reference)
+        return self._topup_payment(row, embedded.session_id, embedded.client_secret, label)
+
+    async def _topup_request(self, row: dict, label: str) -> dict:
+        embedded_id = (row["stripe_session_ids"] or [None])[0]
+        secret = None
+        if embedded_id:
+            try:
+                secret = getattr(await self.stripe.retrieve(embedded_id), "client_secret", None)
+            except Exception:
+                secret = None
+        return self._topup_payment(row, embedded_id or "", secret, label)
+
+    def _topup_payment(self, row: dict, session_id: str, client_secret: str | None, label: str) -> dict:
+        total, currency = int(row["amount_minor"]), row["currency"]
+        result = self._stripe_request(row["reference"], total, currency, session_id, client_secret,
+                                      row["checkout_url"], row["deadline_at"], "")
+        result["narration"] = (f"Your replacement sailing costs {money(total, currency)} more than your original "
+                               f"booking ({label}). Please pay the fare difference by card."
+                               + (f"\n\nIf the payment form doesn't appear, pay securely with Stripe here:\n"
+                                  f"{row['checkout_url']}" if row["checkout_url"] else ""))
+        result["payment"]["description"] = f"Hormuz Exchange fare difference for your rebooking: {money(total, currency)}."
+        result["payment"]["metadata"]["service"] = "recovery_fare_difference"
+        return result
+
+    async def _settle_topup(self, row: dict, session_id: str, verdict) -> dict | None:
+        proof = {"stripe_session": session_id, "provider_status": verdict.provider_status, "livemode": False,
+                 "amount_minor": int(row["amount_minor"]), "currency": row["currency"]}
+        async with self.repo.pool.connection() as conn, conn.transaction():
+            won = await (await conn.execute(
+                """UPDATE payment_records SET status = 'VERIFIED', provider_tx_id = %s, provider_status = %s,
+                       verification = coalesce(verification, '{}'::jsonb) || %s, provider_verified_at = now(),
+                       verified_at = now(), updated_at = now()
+                   WHERE reference = %s AND status IN ('REQUESTED', 'COMMIT_RECEIVED') RETURNING payment_id""",
+                (session_id, verdict.provider_status, _jsonb(proof), row["reference"]))).fetchone()
+            if won is not None:
+                await _event(conn, "PAYMENT_VERIFIED", "payment", row["payment_id"], correlation_id=row["reference"],
+                             payload={"reference": row["reference"], "status": "VERIFIED", "provider": "stripe",
+                                      "purpose": "recovery_fare_difference", "booking_id": row["booking_id"],
+                                      "tx": session_id[:16]})
+        if won is None:
+            return {"action": "none", "followups": []}
+        for other in row["stripe_session_ids"] or []:
+            if other != session_id:
+                await self.stripe.expire(other)
+        receipt = cards.status_detail("Fare difference paid", [
+            ("Booking", row["booking_id"]),
+            ("Paid", f"{money(int(row['amount_minor']), row['currency'])} by card (verified with Stripe)"),
+            ("Status", "Your replacement booking is fully paid")],
+            f"Thanks, the fare difference for {row['booking_id']} is paid. You're all set.")
+        return {"action": "complete", "transaction_id": session_id, "chat_session_id": row["chat_session_id"],
+                "followups": [receipt]}
+
     async def _commit_stripe(self, row: dict, env: dict) -> dict:
         if row["status"] == "VERIFIED":
             return await self._completed(row)
@@ -287,7 +379,7 @@ class FetBookingService:
     async def _settle_stripe(self, row: dict, session_id: str, *, attempts: int) -> dict | None:
         import asyncio
 
-        expected = Expected(row["intent_id"], int(row["amount_minor"]), row["currency"])
+        expected = Expected(row["intent_id"] or row["reference"], int(row["amount_minor"]), row["currency"])
         for i in range(attempts):
             verdict = classify_session(await self.stripe.retrieve(session_id), expected)
             if verdict.status != PAYMENT_PENDING:
@@ -302,8 +394,11 @@ class FetBookingService:
                 return None
             await self._record(row, "VERIFICATION_FAILED", tx=None, error=verdict.detail, event="PAYMENT_FAILED",
                                proof={"session": session_id[:24], "provider_status": verdict.provider_status})
-            await self._abandon(row, reason=verdict.detail)
+            if row["intent_id"]:
+                await self._abandon(row, reason=verdict.detail)
             return self._cancel(session_id, f"Payment not accepted: {verdict.detail}. Nothing was booked.")
+        if row["intent_id"] is None:  # recovery fare difference: the replacement booking already exists
+            return await self._settle_topup(row, session_id, verdict)
         intent = await self._intent(row["intent_id"])
         hold_ok = intent["status"] == "PAYMENT_PENDING" and intent["hold_expires_at"] > datetime.now(timezone.utc)
         proof = {"stripe_session": session_id, "provider_status": verdict.provider_status, "livemode": False,
@@ -370,6 +465,13 @@ class FetBookingService:
                     out.append((row, settled))
                     continue
                 await self._record(row, "EXPIRED", tx=None, error="payment window closed", event="PAYMENT_EXPIRED")
+                if row["intent_id"] is None:  # fare difference: the booking stands; the balance stays recorded
+                    out.append((row, {"action": "cancel", "transaction_id": None, "reason": "payment window closed",
+                                      "chat_session_id": row["chat_session_id"],
+                                      "followups": [text(f"The payment link for the fare difference on "
+                                                         f"{row['booking_id']} expired. Your booking stands; the "
+                                                         "balance is still due.")]}))
+                    continue
                 await self._abandon(row, reason="payment window closed")
                 out.append((row, {"action": "cancel", "transaction_id": None, "reason": "payment window closed",
                                   "chat_session_id": row["chat_session_id"],
@@ -522,6 +624,9 @@ class FetBookingService:
                                      offer=self._offer_view(intent), payment_line="already confirmed")
 
     async def _completed(self, row: dict) -> dict:
+        if row["intent_id"] is None:  # a settled fare difference: same answer, nothing new
+            return {"action": "complete", "transaction_id": row["provider_tx_id"],
+                    "chat_session_id": row["chat_session_id"], "followups": []}
         intent = await self._intent(row["intent_id"])
         follow = [await self._receipt(intent)] if intent["status"] == "BOOKING_CONFIRMED" else []
         return {"action": "complete", "transaction_id": row["provider_tx_id"], "chat_session_id": row["chat_session_id"],
