@@ -128,3 +128,10 @@
 - Fixed: seams README wrongly said `console/pyproject.toml` depends on `freight-seams`. It does not yet.
 - Open: `max_additional_cost_minor` (D5) is stored nowhere; defaults to 0 until phase 4 records it. Buyer identity (Parth's finding: shared `agentverse_sender`) is Tisya's to investigate.
 - Real `DisruptionSeam` (Tiger-backed) does not exist yet: console's `withdraw_sailing` is not wired to the seam and `disrupted_bookings()` is unimplemented.
+
+### 2026-10-17 — [Tisya] Own dev database + Phase 05 live evidence (branch tisya/dev-db)
+- Local TimescaleDB 2.30.2 in Docker (`freight-tiger-dev`, 127.0.0.1:5433), same version as Parth's Tiger Cloud. `.env` local URL + generated password + generated carrier seeds (none printed). `console/scripts/dev_db.py up|reset` creates or wipes, migrates, seeds, preseeds B and C; refuses any non-local URL.
+- Evidence: migrate → 001_core, 002_negotiation_selection; seed → ports 2, carriers 3, sailings 6, slots 18. Console `uv run pytest -q` with DB → **17 passed** (13 unit + 4 live: unknown sailing rejected, cross-carrier rejected (AT-05-04), idempotent withdrawal (AT-05-03), other sailings untouched (AT-05-02)). Withdrawal of ATL-101 and BEA-202 disrupted exactly the bookings on them; events SAILING_WITHDRAWN ×2, BOOKING_DISRUPTED ×2. Allocation live reader (branch tisya/allocation-solver): 1 passed; read BEA-201=2, COV-301=1.
+- Fixed: console live tests errored at teardown ("Event loop is closed"): module-scoped pool cleanup across per-test event loops. Now per test.
+- NEEDS-FROM-PARTH: `scripts/init_carrier_identities.py` treats keys present-but-empty (as copied from `.env.example`) as set, so all three carriers get the same identity from an empty seed and `db.py seed` then fails. Suggest treating an empty value as missing. Worked around in `dev_db.py`.
+- Not covered: migrations 003/004 (Parth's open branches) not applied here yet; rerun `dev_db.py up` after they merge.
