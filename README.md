@@ -1,6 +1,6 @@
 <div align="center">
 
-# Hormuz Exchange
+# Parley
 
 **An autonomous freight market on Fetch.ai: agents negotiate the price, the exchange decides the match, and nobody has to reveal their secrets.**
 
@@ -20,7 +20,7 @@
 When a sailing through the Strait of Hormuz is cancelled, dozens of shippers lose their space at once, and they all
 scramble for the same few replacement slots. First-come-first-served rebooking strands the cargo that matters most.
 
-**Hormuz Exchange** turns container shipping into a two-sided agent market:
+**Parley** turns container shipping into a two-sided agent market:
 
 - **Shippers book entirely inside ASI:One.** A private buyer agent negotiates with independent carrier agents in
   parallel, without ever revealing the shipper's budget, then books and takes card payment through the Fetch
@@ -29,7 +29,8 @@ scramble for the same few replacement slots. First-come-first-served rebooking s
 - **When a carrier withdraws a sailing**, the exchange negotiates replacements for every stranded booking at once
   (60-second cap), clears them *jointly* with a five-stage OR-Tools objective, holds, asks buyers for approval when
   needed, confirms, and pushes the outcome into each buyer's existing chat.
-- **Every step is recorded in Tiger (TimescaleDB)** and can be watched live, or replayed, in Mission Control.
+- **Tiger (TimescaleDB) referees every deal:** slot-level locking means parallel agents can never oversell, and every step
+  is recorded so it can be watched live, or replayed, in Mission Control. See [Why Tiger](#why-tiger).
 
 ## Highlights
 
@@ -44,12 +45,12 @@ scramble for the same few replacement slots. First-come-first-served rebooking s
 
 ## Try it in ASI:One
 
-Talk to **`@freight-disruption`**, or just ask ASI:One something like *"Get me freight quotes for a 20ft container
+Talk to **`@freight-parley`**, or just ask ASI:One something like *"Get me freight quotes for a 20ft container
 from Dubai to India"*.
 
 | Agent | Address | Role |
 |---|---|---|
-| **Hormuz Exchange** (`@freight-disruption`) | `agent1q0ktnrhtmerdle6tz9lmdj9v7c0vzrtnl8wdvuthj88cj9ydp7j3vmymxm8` | Buyer-facing mailbox uAgent: Chat Protocol, Interactive Cards, Agent Payment Protocol (seller) |
+| **Parley** (`@freight-parley`) | `agent1q0ktnrhtmerdle6tz9lmdj9v7c0vzrtnl8wdvuthj88cj9ydp7j3vmymxm8` | Buyer-facing mailbox uAgent: Chat Protocol, Interactive Cards, Agent Payment Protocol (seller) |
 | Atlas Lines | `agent1qvjf3yf8gnps47a5g6e5ca7ut5g0mul25nnwvvuuc6c64ndyundlz7g7evk` | Carrier uAgent (fill-the-ship policy) |
 | Beacon Maritime | `agent1q25t3ute3t7q4jnhkxx2p82a5ddkdrlg4wt364xv02e0w9te4360k6jx3tl` | Carrier uAgent (protect-margin policy) |
 | Cove Shipping | `agent1q0d9kttp2thtehadr89n02rque7rga7pqqgpfw4glvq4cczn2dtlgx4grlp` | Carrier uAgent (balanced policy) |
@@ -63,7 +64,7 @@ flowchart LR
     subgraph Buyer["Shipper in ASI:One"]
         U[Chat + Interactive Cards]
     end
-    subgraph Exchange["Hormuz Exchange"]
+    subgraph Exchange["Parley"]
         G[Buyer gateway uAgent<br/>Chat · Cards · Payment Protocol]
         API[Exchange API<br/>buyer agents · negotiation sessions<br/>booking · payments · outbox]
         W[Recovery worker<br/>negotiate · OR-Tools clearing<br/>holds · approvals · confirm]
@@ -110,6 +111,24 @@ confirm → the old booking is superseded by the new one → buyers see "Rebooke
 **Privacy by construction.** Buyer budgets, auto-rebook limits and must-deliver flags never leave the exchange's
 buyer agent; carrier floors and policies never leave the carrier agent. Public negotiation messages carry only
 terms and a short rationale. The read-only APIs pass every response through a redaction guard.
+
+## Why Tiger
+
+Six independent agents negotiating at once will oversell if they take each other's word for it. Tiger is the
+referee: no agreement is real until Tiger accepts it.
+
+- **One truth about capacity.** Carrier agents read their own policy and inventory from Tiger, and the exchange
+  re-checks every offer against it before the offer counts.
+- **No double-booking under parallel negotiation.** Every container slot is a row. Holds and bookings claim slots
+  with `FOR UPDATE SKIP LOCKED`, conditional updates and partial unique indexes, so a slot never has more than one
+  active hold or booking, withdrawn sailings can't be held, and idempotency keys make retried agent messages
+  harmless (`carriers/carrier_agent/holds.py`).
+- **An audit trail that can't drift.** Each inventory change appends its `market_events` row in the same
+  transaction.
+- **Time series at the core.** `market_events` and per-minute `sailing_capacity_snapshots` are hypertables; the
+  `market_activity_1m` continuous aggregate (with a refresh policy) powers Market Intelligence; the Time Machine
+  replays incidents from `market_state_checkpoints` plus the event log.
+- **Safe approvals.** Buyer approvals are serialized with advisory locks, so one approval can't apply twice.
 
 ## Repository layout
 
