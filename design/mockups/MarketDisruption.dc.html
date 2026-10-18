@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Market: disruption</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&amp;family=Barlow+Condensed:wght@500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#131416}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.cond{font-family:'Barlow Condensed',Barlow,sans-serif}
+.lbl{font-size:12px;line-height:16px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#A3A6AA}
+.ct{position:relative;flex:none;width:64px;height:36px;box-sizing:border-box;border:1px solid rgba(0,0,0,.45);background-image:repeating-linear-gradient(90deg,rgba(0,0,0,.2) 0 2px,transparent 2px 6px)}
+.ct::before,.ct::after{content:"";position:absolute;top:2px;width:4px;height:4px;background:rgba(0,0,0,.45);box-shadow:0 26px 0 rgba(0,0,0,.45)}
+.ct::before{left:2px}.ct::after{right:2px}
+.ct.sm{width:28px;height:16px}
+.ct.sm::before,.ct.sm::after{width:3px;height:3px;top:1px;box-shadow:0 10px 0 rgba(0,0,0,.45)}
+.atlas{background-color:#F26B1D}.beacon{background-color:#8B6CF0}.cove{background-color:#1FAE6E}.meridian{background-color:#3B6FE8}.dhow{background-color:#C08A55}
+.ct.strand{background-image:repeating-linear-gradient(45deg,rgba(19,20,22,.6) 0 3px,transparent 3px 8px),repeating-linear-gradient(90deg,rgba(0,0,0,.2) 0 2px,transparent 2px 6px)}
+a{color:#FFD31A}a:hover{color:#FFE36B}
+.step{display:flex;gap:10px;align-items:baseline;padding:12px 0;border-bottom:2px solid transparent;color:#A3A6AA;text-decoration:none}
+.step.on{color:#EDEBE6;border-bottom-color:#FFD31A}
+.pair{display:grid;grid-template-columns:110px 24px 1fr auto;gap:10px;align-items:center;padding:12px 0;border-bottom:1px solid #2F3338;font-size:15px}
+</style>
+</helmet>
+<div style="min-height: 900px; background: #131416; color: #EDEBE6; font-family: Barlow, system-ui, sans-serif; display: flex; flex-direction: column;">
+  <header style="display: flex; align-items: center; gap: 24px; padding: 0 32px; min-height: 56px; border-bottom: 1px solid #2F3338; flex-wrap: wrap;">
+    <span style="font-weight: 600; font-size: 18px;">Freight exchange</span>
+    <span class="mono" style="font-size: 13px; color: #A3A6AA;">live · 18 Oct 09:40:21 UTC</span>
+    <label style="margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 14px; color: #A3A6AA; cursor: pointer;"><input type="checkbox" style="accent-color: #E5399B; width: 18px; height: 18px;">X-ray: show hidden limits</label>
+    <span style="font-size: 14px; color: #A3A6AA;">Demo view · read only</span>
+  </header>
+
+  <div style="padding: 32px 40px 40px; display: flex; flex-direction: column; gap: 28px; flex-grow: 1;">
+    <nav aria-label="Recovery steps" style="display: flex; gap: 40px; border-bottom: 1px solid #2F3338; flex-wrap: wrap;">
+      <a class="step on" href="MarketDisruption.dc.html"><span class="mono">1</span>Disruption</a>
+      <a class="step" href="MarketNegotiation.dc.html"><span class="mono">2</span>Negotiation</a>
+      <a class="step" href="MarketAllocation.dc.html"><span class="mono">3</span>Allocation</a>
+    </nav>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 56px;">
+      <section style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 28px;">
+        <div>
+          <h1 class="cond" style="margin: 0; font-size: 88px; line-height: 88px; font-weight: 600; letter-spacing: -0.01em;">ATL-101 withdrawn</h1>
+          <p style="margin: 12px 0 0; font-size: 20px; color: #A3A6AA;">Atlas pulled the sailing at <span class="mono" style="color: #EDEBE6;">09:40:16</span> over the Hormuz advisory. 4 containers have no ship.</p>
+        </div>
+
+        <svg viewBox="0 0 640 230" role="img" aria-label="Atlas Meridian at berth with its four containers lifted off and marked stranded" style="width: 100%; max-width: 760px; height: auto;">
+          <defs>
+            <pattern id="rb" width="6" height="6" patternUnits="userSpaceOnUse"><rect width="2" height="6" fill="rgba(0,0,0,.22)"></rect></pattern>
+            <pattern id="st" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="3" height="8" fill="rgba(19,20,22,.55)"></rect></pattern>
+          </defs>
+          <g>
+            <rect x="96" y="20" width="96" height="52" fill="#F26B1D"></rect><rect x="96" y="20" width="96" height="52" fill="url(#rb)"></rect><rect x="96" y="20" width="96" height="52" fill="url(#st)"></rect>
+            <rect x="204" y="34" width="96" height="52" fill="#F26B1D"></rect><rect x="204" y="34" width="96" height="52" fill="url(#rb)"></rect><rect x="204" y="34" width="96" height="52" fill="url(#st)"></rect>
+            <rect x="312" y="16" width="96" height="52" fill="#F26B1D"></rect><rect x="312" y="16" width="96" height="52" fill="url(#rb)"></rect><rect x="312" y="16" width="96" height="52" fill="url(#st)"></rect>
+            <rect x="420" y="30" width="96" height="52" fill="#F26B1D"></rect><rect x="420" y="30" width="96" height="52" fill="url(#rb)"></rect><rect x="420" y="30" width="96" height="52" fill="url(#st)"></rect>
+            <g font-family="Barlow Condensed" font-weight="600" font-size="30" fill="#131416"><text x="133" y="56">A</text><text x="241" y="70">A</text><text x="350" y="52">B</text><text x="458" y="66">C</text></g>
+          </g>
+          <g stroke="#4A4F55" stroke-dasharray="3 4"><line x1="144" y1="72" x2="144" y2="150"></line><line x1="252" y1="86" x2="252" y2="150"></line><line x1="360" y1="68" x2="360" y2="150"></line><line x1="468" y1="82" x2="468" y2="150"></line></g>
+          <path d="M20 170 L520 170 L590 160 L560 214 L64 214 Z" fill="#2A2D31" stroke="#4A4F55"></path>
+          <path d="M64 214 L560 214 L572 194 L56 194 Z" fill="#3A1E14"></path>
+          <rect x="36" y="104" width="52" height="66" fill="#2A2D31" stroke="#4A4F55"></rect>
+          <rect x="44" y="114" width="36" height="7" fill="#131416"></rect>
+          <g stroke="#4A4F55" stroke-dasharray="4 3" fill="none"><rect x="100" y="152" width="96" height="18"></rect><rect x="208" y="152" width="96" height="18"></rect><rect x="316" y="152" width="96" height="18"></rect><rect x="424" y="152" width="96" height="18"></rect></g>
+          <text x="600" y="190" font-family="IBM Plex Mono" font-size="13" fill="#A3A6AA">ATL-101</text>
+        </svg>
+
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; border-top: 1px solid #2F3338; padding-top: 20px;">
+          <div><div class="lbl">Buyer A</div><div class="mono" style="font-size: 15px; margin-top: 6px;">BK-28C01D37</div><div style="color: #A3A6AA; font-size: 15px;">2 × 20GP · due Mumbai 25 Oct</div></div>
+          <div><div class="lbl">Buyer B</div><div class="mono" style="font-size: 15px; margin-top: 6px;">BK-0A14FFE2</div><div style="color: #A3A6AA; font-size: 15px;">1 × 20GP · due Mumbai 22 Oct</div></div>
+          <div><div class="lbl">Buyer C</div><div class="mono" style="font-size: 15px; margin-top: 6px;">BK-71BC02A9</div><div style="color: #A3A6AA; font-size: 15px;">1 × 20GP · due Mumbai 22 Oct</div></div>
+        </div>
+      </section>
+
+      <aside style="flex: 1 1 380px; max-width: 460px; display: flex; flex-direction: column; gap: 4px;">
+        <div class="lbl">Who can carry what, before any price talk</div>
+        <p style="margin: 6px 0 10px; font-size: 15px; color: #A3A6AA;">The exchange only pairs a buyer with a carrier that has real space and arrives before that buyer's deadline.</p>
+        <div class="pair"><span>Buyer A</span><span style="color: #7D8186;">→</span><span style="display: flex; gap: 8px; align-items: center;"><span class="ct sm beacon"></span>Beacon <span class="mono" style="color: #A3A6AA; font-size: 13px;">BEA-201 · 22 Oct</span></span><span style="color: #43C47A;">paired</span></div>
+        <div class="pair"><span>Buyer A</span><span style="color: #7D8186;">→</span><span style="display: flex; gap: 8px; align-items: center;"><span class="ct sm cove"></span>Cove <span class="mono" style="color: #A3A6AA; font-size: 13px;">COV-301 · 24 Oct</span></span><span style="color: #43C47A;">paired</span></div>
+        <div class="pair"><span>Buyer A</span><span style="color: #7D8186;">→</span><span style="display: flex; gap: 8px; align-items: center;"><span class="ct sm meridian"></span>Meridian <span class="mono" style="color: #A3A6AA; font-size: 13px;">MER-411 · 25 Oct</span></span><span style="color: #43C47A;">paired</span></div>
+        <div class="pair"><span>Buyer B</span><span style="color: #7D8186;">→</span><span style="display: flex; gap: 8px; align-items: center;"><span class="ct sm beacon"></span>Beacon</span><span style="color: #43C47A;">paired</span></div>
+        <div class="pair"><span>Buyer C</span><span style="color: #7D8186;">→</span><span style="display: flex; gap: 8px; align-items: center;"><span class="ct sm beacon"></span>Beacon</span><span style="color: #43C47A;">paired</span></div>
+        <div class="pair" style="color: #A3A6AA;"><span>B and C</span><span style="color: #7D8186;">✕</span><span style="display: flex; gap: 8px; align-items: center;"><span class="ct sm cove"></span>Cove</span><span>too late</span></div>
+        <div class="pair" style="color: #A3A6AA;"><span>Everyone</span><span style="color: #7D8186;">✕</span><span style="display: flex; gap: 8px; align-items: center;"><span class="ct sm dhow"></span>Dhow</span><span>no route</span></div>
+        <a href="MarketNegotiation.dc.html" style="margin-top: 20px; align-self: flex-start; background: #FFD31A; color: #131416; text-decoration: none; font-weight: 600; padding: 12px 22px; border-radius: 2px;">5 sessions open · watch them</a>
+      </aside>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

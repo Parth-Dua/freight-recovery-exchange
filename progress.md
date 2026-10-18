@@ -336,6 +336,11 @@
 - NEEDS-FROM-PARTH: agree the handoffs in section 13 (session columns, `market_events` negotiation event names, new `carrier_policies` keys); confirm the 03:00 takeover check.
 - Next: card test, then the carrier dashboard.
 
+### 2026-10-18 — [Tisya] Carrier dashboard: pricing agent preferences (branch tisya/carrier-dashboard)
+- Done: `console/carrier_console/preferences.py` + routes `/carrier/{id}/preferences` (GET/POST). Reads and saves `carrier_policies.policy` with validation, business goal presets (fill the ship, balanced, protect margin), optimistic version check (a stale form cannot overwrite a newer save), and a `CARRIER_POLICY_UPDATED` market event that names changed fields only, never values. Unknown keys are preserved; the legacy `concession_pct` is kept as the half-full midpoint for carrier code that reads one value. `design/dashboard-design-brief.md` for the Paper design agent. Design doc: cards moved to Parth end to end.
+- Tests / evidence: console unit 34 passed (10 new). Live, local TimescaleDB: 3 new preference tests passed (version bump, field names only in the event, stale form rejected, unchanged save is a no-op), each restoring Atlas's policy. Page smoke test on a local server: GET 200, preset fills without saving, floor above target shows a field error.
+- NEEDS-FROM-PARTH: carrier agents should read the new keys `concession_empty_pct`, `concession_full_pct`, `disruption_surge_pct`, `business_goal` (design doc section 9). Until then they keep using `concession_pct`.
+- Next: style the dashboard to the Paper design; map and analytics; risk page.
 ### 2026-10-18 — gateway mailbox connected
 - Parth connected the gateway mailbox via the Agentverse inspector; handle `@freight-disruption`.
 - Verified over the real Agentverse network (not ASI:One): a throwaway local uAgent sent `I need to ship cargo`
@@ -360,6 +365,11 @@
 - Discovery: gateway profile README/description rewritten for Agentverse search; any shipping intent (incl.
   detailed asks routed by ASI:One) opens the form card.
 
+### 2026-10-18 — [Tisya] Carrier console rebuilt on IBM Carbon (branch tisya/carrier-dashboard)
+- Done: console now uses Carbon's g100 dark theme (`@carbon/styles@1.60.0` from unpkg, IBM Plex fonts) instead of hand-made styles, so standard parts are a known human-made system. New `ui.py` (shell, tables, tags, notifications, container blocks, ship). Pages per carrier: Sailings (`/carrier/{id}/sailings`, hero for the next sailing through an advisory), Sailing detail (ship profile + bookings + withdrawal review), Pricing (moved from /preferences, which now redirects), Agent activity (`negotiation_messages` + `negotiation_sessions` for this carrier, each carrier price checked against its floor), Risk (advisories, affected sailings, withdrawal history). Ship: CC0 side-profile drawing (Wikimedia Commons `Container-158362.svg`, OpenClipartVectors) recolored to the palette; its 4 exchange slots fill from live booking counts. Surge capped at 100% to match the carrier's `Policy.validate`.
+- Evidence: console unit 33 passed (7 live skipped). Local TimescaleDB, migrations 006–013 applied, `dev_db.py reset` (5 carriers, 23 sailings): every page renders against it in a local browser; Agent activity is empty until a live negotiation runs.
+- Note: the Tisya .env lacked CARRIER_MERIDIAN_SEED / CARRIER_DHOW_SEED (added in #13); generated in this worktree's .env only.
+- Next: market view with X-ray from `negotiation_sessions` / `negotiation_messages`, from Tisya's hand sketch.
 ### 2026-10-18 — recovery fare difference + read-only cards rendering
 - Recovery that rebooks at a higher freight price now asks for the difference: after the replacement carrier
   confirms, the Rebooked card shows the difference and is followed by a Stripe TEST payment request for exactly
@@ -388,3 +398,7 @@
   confirmed): War Room RESOLVED 3/3; replay fixture tests (18 vitest) incl. final state == Tiger, no quote before it
   was sent, nothing green before commit, never 3/3 while an approval is pending; 7 pytest privacy/state tests.
 - `scripts/demo_reset.sh`: one-command reset to the finalized demo baseline at a fixed anchor (2026-10-19).
+### 2026-10-18 — [Tisya] Market view with X-ray (branch tisya/carrier-dashboard)
+- Done: `/market` in the console (Carbon), three steps: Disruption (withdrawn sailing, stranded containers, who was paired with whom and why), Negotiation (buyer-to-carrier session lines by state, the selected session's agent messages), Allocation (first come, first served vs exchange, where each booking went and its status). Built from one `MarketSnapshot` (`console/carrier_console/market.py`): `load_snapshot` reads the latest `recovery_runs` (stranded snapshot + baseline), `negotiation_sessions`/`negotiation_messages` (recovery kind), `recovery_legs` (latest attempt) and carrier names; `sample_snapshot()` is the demo story, labelled "Sample story" on screen (`/market?sample=1`). X-ray (`&xray=1`): the carrier's floor and the buyer's max (original + pre-approved, per container) on a price track with the deal zone, plus "outside limits, needs OK" when max < floor. For live data X-ray works only when the console starts with `MARKET_XRAY=1`.
+- Evidence: console unit 39 passed (6 new). Sample renders in a local browser for all three steps and X-ray. The live loader runs against the local DB (no recovery run there, so it shows the empty state); NOT yet checked against a real recovery run.
+- NEEDS-FROM-PARTH: run one recovery (`demo.py rehearse --runs 1` or the live flow) on a DB the console can read, then open `/market` to confirm the live snapshot.

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Risk</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&amp;family=Barlow+Condensed:wght@500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#131416}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.cond{font-family:'Barlow Condensed',Barlow,sans-serif}
+.lbl{font-size:12px;line-height:16px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#A3A6AA}
+.ct{position:relative;flex:none;width:64px;height:36px;box-sizing:border-box;border:1px solid rgba(0,0,0,.45);background-image:repeating-linear-gradient(90deg,rgba(0,0,0,.2) 0 2px,transparent 2px 6px)}
+.ct::before,.ct::after{content:"";position:absolute;top:2px;width:4px;height:4px;background:rgba(0,0,0,.45);box-shadow:0 26px 0 rgba(0,0,0,.45)}
+.ct::before{left:2px}.ct::after{right:2px}
+.ct.sm{width:28px;height:16px}
+.ct.sm::before,.ct.sm::after{width:3px;height:3px;top:1px;box-shadow:0 10px 0 rgba(0,0,0,.45)}
+.atlas{background-color:#F26B1D}
+a{color:#FFD31A}a:hover{color:#FFE36B}
+.nav a{color:#A3A6AA;text-decoration:none;padding:17px 0;border-bottom:2px solid transparent}
+.nav a.on{color:#EDEBE6;border-bottom-color:#FFD31A}
+.srow{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:16px 0;border-bottom:1px solid #2F3338;flex-wrap:wrap}
+</style>
+</helmet>
+<div style="min-height: 900px; background: #131416; color: #EDEBE6; font-family: Barlow, system-ui, sans-serif; display: flex; flex-direction: column;">
+  <header style="display: flex; align-items: center; gap: 40px; padding: 0 32px; min-height: 56px; border-bottom: 1px solid #2F3338; flex-wrap: wrap;">
+    <button aria-label="Switch carrier" style="display: flex; align-items: center; gap: 10px; background: none; border: 0; padding: 0; color: #EDEBE6; font: 600 18px Barlow, sans-serif; cursor: pointer;"><span class="ct sm atlas"></span>Atlas Lines<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" stroke="#A3A6AA" stroke-width="1.5" fill="none"></path></svg></button>
+    <nav class="nav" style="display: flex; gap: 28px; font-size: 15px;"><a href="Main.dc.html">Sailings</a><a href="Pricing.dc.html">Pricing</a><a href="AgentActivity.dc.html">Agent activity</a><a href="Risk.dc.html" class="on">Risk</a></nav>
+    <span style="margin-left: auto; font-size: 14px; color: #A3A6AA;">Dubai operations desk</span>
+    <a href="MarketNegotiation.dc.html" style="font-size: 14px; text-decoration: none;">Market view ↗</a>
+  </header>
+
+  <div style="display: flex; flex-wrap: wrap; flex-grow: 1;">
+    <main style="flex: 1 1 460px; max-width: 600px; padding: 40px 40px; display: flex; flex-direction: column; gap: 28px; box-sizing: border-box; border-right: 1px solid #2F3338;">
+      <div>
+        <div style="display: flex; align-items: center; gap: 10px;"><span style="width: 18px; height: 12px; background: repeating-linear-gradient(45deg,#E5399B 0 2px,transparent 2px 5px); border: 1px solid #E5399B;"></span><span class="lbl" style="color: #E5399B;">1 active advisory · simulated</span></div>
+        <h1 class="cond" style="margin: 12px 0 0; font-size: 64px; line-height: 64px; font-weight: 600; letter-spacing: -0.01em;">Strait of Hormuz</h1>
+        <p style="margin: 14px 0 0; font-size: 18px; line-height: 27px; max-width: 46ch;">Vessel security incident reported in the strait. Operators are reviewing routing for ships due through it.</p>
+        <div class="mono" style="margin-top: 10px; font-size: 13px; color: #A3A6AA;">SIM-ADV-2026-014 · severity high · 17 Oct 06:00 UTC</div>
+      </div>
+
+      <section>
+        <div class="lbl">Your sailings through the strait</div>
+        <div class="srow" style="border-bottom: 0; padding-bottom: 8px;">
+          <div><div class="mono" style="font-size: 20px;">ATL-101</div><div style="font-size: 14px; color: #A3A6AA;">departs 19 Oct 14:30 · 3 bookings · 4 containers</div></div>
+          <span style="font-size: 14px; color: #FFA51F;">Reviewing</span>
+        </div>
+        <div style="background: #1B1D20; border: 1px solid #FF5A4E; padding: 20px 22px; display: flex; flex-direction: column; gap: 14px;">
+          <div style="font-size: 17px; font-weight: 600;">Withdraw ATL-101?</div>
+          <div style="font-size: 15px; color: #A3A6AA;">These bookings become disrupted. The exchange starts looking for replacement space right away.</div>
+          <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 15px;">
+            <li style="display: flex; gap: 12px; align-items: center;"><span style="display: flex; gap: 3px;"><span class="ct sm atlas"></span><span class="ct sm atlas"></span></span><span class="mono">BK-28C01D37</span><span style="color: #A3A6AA;">2 × 20GP · due 25 Oct</span></li>
+            <li style="display: flex; gap: 12px; align-items: center;"><span class="ct sm atlas"></span><span class="mono">BK-0A14FFE2</span><span style="color: #A3A6AA;">1 × 20GP · due 22 Oct</span></li>
+            <li style="display: flex; gap: 12px; align-items: center;"><span class="ct sm atlas"></span><span class="mono">BK-71BC02A9</span><span style="color: #A3A6AA;">1 × 20GP · due 22 Oct</span></li>
+          </ul>
+          <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap; padding-top: 4px;">
+            <button type="button" style="background: #FF5A4E; color: #131416; border: 0; font: 600 16px Barlow, sans-serif; padding: 12px 22px; border-radius: 2px; cursor: pointer;">Withdraw ATL-101</button>
+            <a href="#" style="color: #A3A6AA;">Keep it scheduled</a>
+          </div>
+        </div>
+        <div class="srow"><div><div class="mono" style="font-size: 18px;">ATL-102</div><div style="font-size: 14px; color: #A3A6AA;">departs 23 Oct 09:15 · 2 bookings</div></div><a href="#" style="font-size: 14px;">Review</a></div>
+        <div class="srow"><div><div class="mono" style="font-size: 18px;">ATL-151</div><div style="font-size: 14px; color: #A3A6AA;">Dammam, departs 20 Oct 21:40 · 1 booking</div></div><a href="#" style="font-size: 14px;">Review</a></div>
+        <div style="padding-top: 12px; font-size: 14px; color: #A3A6AA;">2 more sailings later this month. Advisories never cancel a sailing on their own.</div>
+      </section>
+    </main>
+
+    <section style="flex: 999 1 480px; min-width: 0; position: relative; min-height: 640px;">
+      <svg viewBox="200 100 300 230" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Close-up of the Strait of Hormuz with the advisory zone hatched in magenta" style="position: absolute; inset: 0; width: 100%; height: 100%;">
+        <defs><pattern id="hz3" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="1.4" height="4" fill="#E5399B"></rect></pattern></defs>
+        <rect x="0" y="0" width="1200" height="920" fill="#0E0F11"></rect>
+        <path d="M0 56 L16 84 L64 156 L88 188 L112 204 L124 196 L144 204 L144 252 L132 268 L184 272 L240 268 L268 248 L282 240 L296 228 L316 212 L324 196 L334 185 L338 198 L332 220 L334 240 L344 260 L350 268 L384 290 L424 296 L456 328 L472 340 L452 384 L424 416 L392 472 L352 512 L296 528 L240 564 L168 616 L80 640 L0 680 Z" fill="#1D1F23" stroke="#3E4349" stroke-width=".6"></path>
+        <path d="M0 0 L1200 0 L1200 916 L1180 916 L1136 884 L1112 840 L1080 760 L1060 700 L1032 624 L1008 560 L996 504 L994 476 L992 424 L984 380 L968 388 L912 412 L880 400 L840 348 L864 330 L888 320 L836 316 L816 296 L784 280 L760 248 L744 224 L640 228 L572 236 L504 228 L440 224 L392 216 L372 204 L356 164 L332 152 L292 176 L240 172 L184 144 L140 124 L112 84 L92 72 L20 40 L0 40 Z" fill="#1D1F23" stroke="#3E4349" stroke-width=".6"></path>
+        <path d="M316 188 L336 170 L356 166 L366 192 L352 212 L336 204 Z" fill="url(#hz3)" stroke="#E5399B" stroke-width=".8"></path>
+        <path d="M281 239 L308 210 L332 178 L354 196 L384 236 L440 276" fill="none" stroke="#F26B1D" stroke-width="1.4" stroke-dasharray="3 2"></path>
+        <circle cx="281" cy="239" r="2.4" fill="#EDEBE6"></circle>
+        <text x="252" y="252" font-family="IBM Plex Mono" font-size="8" fill="#EDEBE6">AEJEA</text>
+        <circle cx="349" cy="266" r="1.8" fill="#7D8186"></circle>
+        <text x="354" y="275" font-family="IBM Plex Mono" font-size="7" fill="#A3A6AA">OMSOH · outside zone</text>
+        <text x="370" y="180" font-family="Barlow" font-size="9" fill="#E5399B" font-weight="600">Hormuz advisory</text>
+        <text x="370" y="190" font-family="IBM Plex Mono" font-size="6.5" fill="#E5399B">SIM-ADV-2026-014</text>
+        <g font-family="Barlow" font-size="7" fill="#7D8186" letter-spacing="2"><text x="300" y="140">IRAN</text><text x="230" y="290">UAE</text><text x="380" y="310">OMAN</text><text x="306" y="214" letter-spacing="0.5">Musandam</text></g>
+        <g font-family="IBM Plex Mono" font-size="5.5" fill="#7D8186"><text x="481" y="243">25°N</text><text x="276" y="326">55°E</text><text x="476" y="326">60°E</text></g>
+      </svg>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

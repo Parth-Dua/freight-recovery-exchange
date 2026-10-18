@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Market: negotiation</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&amp;family=Barlow+Condensed:wght@500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#131416}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.cond{font-family:'Barlow Condensed',Barlow,sans-serif}
+.lbl{font-size:12px;line-height:16px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#A3A6AA}
+.ct{position:relative;flex:none;width:64px;height:36px;box-sizing:border-box;border:1px solid rgba(0,0,0,.45);background-image:repeating-linear-gradient(90deg,rgba(0,0,0,.2) 0 2px,transparent 2px 6px)}
+.ct::before,.ct::after{content:"";position:absolute;top:2px;width:4px;height:4px;background:rgba(0,0,0,.45);box-shadow:0 26px 0 rgba(0,0,0,.45)}
+.ct::before{left:2px}.ct::after{right:2px}
+.ct.sm{width:28px;height:16px}
+.ct.sm::before,.ct.sm::after{width:3px;height:3px;top:1px;box-shadow:0 10px 0 rgba(0,0,0,.45)}
+.atlas{background-color:#F26B1D}.beacon{background-color:#8B6CF0}
+.ct.strand{background-image:repeating-linear-gradient(45deg,rgba(19,20,22,.6) 0 3px,transparent 3px 8px),repeating-linear-gradient(90deg,rgba(0,0,0,.2) 0 2px,transparent 2px 6px)}
+a{color:#FFD31A}a:hover{color:#FFE36B}
+.step{display:flex;gap:10px;align-items:baseline;padding:12px 0;border-bottom:2px solid transparent;color:#A3A6AA;text-decoration:none}
+.step.on{color:#EDEBE6;border-bottom-color:#FFD31A}
+.msg{display:grid;grid-template-columns:28px 1fr auto;gap:4px 14px;padding:18px 0;border-bottom:1px solid #2F3338}
+</style>
+</helmet>
+<div style="min-height: 900px; background: #131416; color: #EDEBE6; font-family: Barlow, system-ui, sans-serif; display: flex; flex-direction: column;">
+  <header style="display: flex; align-items: center; gap: 24px; padding: 0 32px; min-height: 56px; border-bottom: 1px solid #2F3338; flex-wrap: wrap;">
+    <span style="font-weight: 600; font-size: 18px;">Freight exchange</span>
+    <span class="mono" style="font-size: 13px; color: #A3A6AA;">live · 18 Oct 10:18:09 UTC</span>
+    <label style="margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 14px; color: #A3A6AA; cursor: pointer;"><input type="checkbox" style="accent-color: #E5399B; width: 18px; height: 18px;">X-ray: show hidden limits</label>
+    <span style="font-size: 14px; color: #A3A6AA;">Demo view · read only</span>
+  </header>
+
+  <div style="padding: 32px 40px 40px; display: flex; flex-direction: column; gap: 24px; flex-grow: 1;">
+    <nav aria-label="Recovery steps" style="display: flex; gap: 40px; border-bottom: 1px solid #2F3338; flex-wrap: wrap;">
+      <a class="step" href="MarketDisruption.dc.html"><span class="mono">1</span>Disruption</a>
+      <a class="step on" href="MarketNegotiation.dc.html"><span class="mono">2</span>Negotiation</a>
+      <a class="step" href="MarketAllocation.dc.html"><span class="mono">3</span>Allocation</a>
+    </nav>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 48px;">
+      <section style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 20px;">
+        <div>
+          <h1 class="cond" style="margin: 0; font-size: 56px; line-height: 60px; font-weight: 600;">Agents are bargaining</h1>
+          <p style="margin: 6px 0 0; font-size: 18px; color: #A3A6AA;">5 sessions · 3 prices agreed · 1 refused · 1 waiting on a buyer</p>
+        </div>
+        <svg viewBox="0 0 680 500" role="img" aria-label="Lines from three stranded buyers to the carriers they are negotiating with. Buyer B and Beacon agreed at $5,500. Buyer C and Beacon need the buyer's approval." style="width: 100%; max-width: 780px; height: auto;">
+          <defs><pattern id="sh" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="3" height="8" fill="rgba(19,20,22,.55)"></rect></pattern><pattern id="rb" width="6" height="6" patternUnits="userSpaceOnUse"><rect width="2" height="6" fill="rgba(0,0,0,.22)"></rect></pattern></defs>
+          <g fill="none" stroke-width="1.5">
+            <path d="M210 74 L440 74" stroke="#4A4F55" stroke-dasharray="4 4"></path>
+            <path d="M210 86 L300 86 L300 206 L440 206" stroke="#EDEBE6"></path>
+            <path d="M210 98 L280 98 L280 326 L440 326" stroke="#EDEBE6"></path>
+            <path d="M210 246 L330 246 L330 88 L440 88" stroke="#FFD31A" stroke-width="3"></path>
+            <path d="M210 406 L352 406 L352 100 L440 100" stroke="#FFA51F" stroke-dasharray="6 4"></path>
+          </g>
+          <g font-family="IBM Plex Mono" font-size="13">
+            <text x="226" y="66" fill="#A3A6AA">refused at $6,000</text>
+            <text x="364" y="200" fill="#EDEBE6">$5,200 ✓</text>
+            <text x="364" y="320" fill="#EDEBE6">$5,550 ✓</text>
+            <text x="216" y="238" fill="#FFD31A">$5,500 ✓</text>
+            <text x="360" y="380" fill="#FFA51F">waiting on buyer</text>
+          </g>
+          <g font-family="Barlow">
+            <rect x="20" y="70" width="60" height="32" fill="#F26B1D"></rect><rect x="20" y="70" width="60" height="32" fill="url(#rb)"></rect><rect x="20" y="70" width="60" height="32" fill="url(#sh)"></rect>
+            <text x="94" y="84" fill="#EDEBE6" font-size="18" font-weight="600">Buyer A</text><text x="94" y="102" fill="#A3A6AA" font-size="13">2 × 20GP · by 25 Oct</text>
+            <rect x="20" y="230" width="60" height="32" fill="#F26B1D"></rect><rect x="20" y="230" width="60" height="32" fill="url(#rb)"></rect><rect x="20" y="230" width="60" height="32" fill="url(#sh)"></rect>
+            <rect x="15" y="225" width="70" height="42" fill="none" stroke="#FFD31A" stroke-width="1.5"></rect>
+            <text x="94" y="244" fill="#EDEBE6" font-size="18" font-weight="600">Buyer B</text><text x="94" y="262" fill="#A3A6AA" font-size="13">1 × 20GP · by 22 Oct</text>
+            <rect x="20" y="390" width="60" height="32" fill="#F26B1D"></rect><rect x="20" y="390" width="60" height="32" fill="url(#rb)"></rect><rect x="20" y="390" width="60" height="32" fill="url(#sh)"></rect>
+            <text x="94" y="404" fill="#EDEBE6" font-size="18" font-weight="600">Buyer C</text><text x="94" y="422" fill="#A3A6AA" font-size="13">1 × 20GP · by 22 Oct</text>
+
+            <rect x="446" y="72" width="56" height="30" fill="#8B6CF0"></rect><rect x="446" y="72" width="56" height="30" fill="url(#rb)"></rect>
+            <text x="514" y="86" fill="#EDEBE6" font-size="18" font-weight="600">Beacon</text><text x="514" y="104" fill="#A3A6AA" font-size="13">BEA-201 · 2 open · 22 Oct</text>
+            <rect x="446" y="192" width="56" height="30" fill="#1FAE6E"></rect><rect x="446" y="192" width="56" height="30" fill="url(#rb)"></rect>
+            <text x="514" y="206" fill="#EDEBE6" font-size="18" font-weight="600">Cove</text><text x="514" y="224" fill="#A3A6AA" font-size="13">COV-301 · 3 open · 24 Oct</text>
+            <rect x="446" y="312" width="56" height="30" fill="#3B6FE8"></rect><rect x="446" y="312" width="56" height="30" fill="url(#rb)"></rect>
+            <text x="514" y="326" fill="#EDEBE6" font-size="18" font-weight="600">Meridian</text><text x="514" y="344" fill="#A3A6AA" font-size="13">MER-411 · 2 open · 25 Oct</text>
+            <rect x="446" y="432" width="56" height="30" fill="#C08A55" opacity=".55"></rect><rect x="446" y="432" width="56" height="30" fill="url(#rb)"></rect>
+            <text x="514" y="446" fill="#A3A6AA" font-size="18" font-weight="600">Dhow</text><text x="514" y="464" fill="#A3A6AA" font-size="13">no route to Mumbai</text>
+          </g>
+        </svg>
+        <div style="display: flex; gap: 24px; flex-wrap: wrap; font-size: 13px; color: #A3A6AA;">
+          <span style="display: flex; gap: 8px; align-items: center;"><span style="width: 22px; border-top: 1.5px solid #EDEBE6;"></span>Price agreed</span>
+          <span style="display: flex; gap: 8px; align-items: center;"><span style="width: 22px; border-top: 1.5px dashed #FFA51F;"></span>Needs the buyer's OK</span>
+          <span style="display: flex; gap: 8px; align-items: center;"><span style="width: 22px; border-top: 1.5px dashed #4A4F55;"></span>Refused</span>
+          <span style="display: flex; gap: 8px; align-items: center;"><span style="width: 22px; border-top: 3px solid #FFD31A;"></span>Open on the right</span>
+        </div>
+      </section>
+
+      <aside style="flex: 1 1 400px; max-width: 520px; border-left: 1px solid #2F3338; padding-left: 40px; display: flex; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap;">
+          <h2 class="cond" style="margin: 0; font-size: 34px; font-weight: 600;">Buyer B ↔ Beacon</h2>
+          <a href="#" style="font-size: 14px;">All 5 sessions</a>
+        </div>
+        <div style="font-size: 15px; color: #A3A6AA; margin-top: 4px;">Recovery session <span class="mono">S-0193</span> · round 1 of 2</div>
+        <div style="margin-top: 16px;">
+          <div class="msg">
+            <span class="ct sm beacon" style="margin-top: 3px;"></span>
+            <span style="font-weight: 600;">Beacon's agent</span><span class="mono" style="font-size: 13px; color: #A3A6AA;">10:14:09</span>
+            <span></span><span style="grid-column: 2 / 4; color: #A3A6AA; font-size: 15px;">"I can take 1 container on BEA-201, arriving 22 Oct 04:00."</span>
+            <span></span><span class="mono" style="grid-column: 2 / 4; font-size: 30px; line-height: 36px;">$6,000</span>
+          </div>
+          <div class="msg">
+            <span class="ct sm atlas strand" style="margin-top: 3px;"></span>
+            <span style="font-weight: 600;">Buyer B's agent</span><span class="mono" style="font-size: 13px; color: #A3A6AA;">10:16:41</span>
+            <span></span><span style="grid-column: 2 / 4; color: #A3A6AA; font-size: 15px;">"Comparable offers are around $5,300. Can you meet it?"</span>
+            <span></span><span class="mono" style="grid-column: 2 / 4; font-size: 30px; line-height: 36px;">$5,300</span>
+          </div>
+          <div class="msg">
+            <span class="ct sm beacon" style="margin-top: 3px;"></span>
+            <span style="font-weight: 600;">Beacon's agent</span><span class="mono" style="font-size: 13px; color: #A3A6AA;">10:18:05</span>
+            <span></span><span style="grid-column: 2 / 4; color: #A3A6AA; font-size: 15px;">"I can meet you at $5,500."</span>
+            <span></span><span class="mono" style="grid-column: 2 / 4; font-size: 30px; line-height: 36px; color: #FFD31A;">$5,500</span>
+          </div>
+        </div>
+        <div style="margin-top: 20px; font-size: 17px;"><span style="color: #43C47A;">✓</span> Agreed at <span class="mono">$5,500</span> per container. Waiting for allocation.</div>
+        <div style="margin-top: auto; padding-top: 24px; font-size: 13px; color: #A3A6AA;">Written by the two agents. Nobody on either side typed these.</div>
+      </aside>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

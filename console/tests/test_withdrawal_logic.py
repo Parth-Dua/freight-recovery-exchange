@@ -14,7 +14,7 @@ import pytest
 
 from carrier_console import risk, withdrawal
 from carrier_console.queries import SailingRow
-from carrier_console.web import _chip, _sailing_card
+from carrier_console.web import _at_risk, _status_tag
 from carrier_console.withdrawal import RejectionCode, WithdrawSailing, new_event_id
 
 from datetime import datetime, timezone
@@ -94,11 +94,18 @@ def _row(status: str, committed: int = 2) -> SailingRow:
     )
 
 
-def test_active_sailing_renders_a_withdraw_form() -> None:
-    html = _sailing_card(_row("ACTIVE"))
-    assert 'action="/withdraw/review"' in html
-    assert "risk_sim_0001" in html
-    assert "confirm(" not in html  # no browser popup: embedded browsers block them
+def test_status_tags_use_plain_words() -> None:
+    assert "Scheduled" in _status_tag("ACTIVE")
+    assert "cds--tag--red" in _status_tag("WITHDRAWN")
+    assert "cds--tag--gray" in _status_tag("DEPARTED")  # unknown status falls back to gray
+
+
+def test_only_active_sailings_on_an_affected_corridor_are_at_risk() -> None:
+    from carrier_console.risk import load_risk_events
+
+    events = load_risk_events()
+    assert _at_risk(_row("ACTIVE"), events) is not None
+    assert _at_risk(_row("WITHDRAWN"), events) is None
 
 
 def test_review_page_lists_who_will_be_disrupted() -> None:
@@ -130,16 +137,6 @@ def test_banner_redirects_encode_their_message() -> None:
     location = response.headers["location"]
     assert " " not in location
     assert location.startswith("/?err=CROSS_CARRIER_WITHDRAWAL")
-
-
-def test_withdrawn_sailing_has_no_form() -> None:
-    html = _sailing_card(_row("WITHDRAWN"))
-    assert "<form" not in html
-    assert "chip withdrawn" in html
-
-
-def test_chip_falls_back_for_unknown_status() -> None:
-    assert "chip other" in _chip("DEPARTED")
 
 
 def test_preseed_refuses_buyer_a() -> None:
