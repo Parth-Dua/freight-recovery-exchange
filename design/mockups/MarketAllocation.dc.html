@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Market: allocation</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&amp;family=Barlow+Condensed:wght@500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#131416}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.cond{font-family:'Barlow Condensed',Barlow,sans-serif}
+.lbl{font-size:12px;line-height:16px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#A3A6AA}
+.ct{position:relative;flex:none;width:64px;height:36px;box-sizing:border-box;border:1px solid rgba(0,0,0,.45);background-image:repeating-linear-gradient(90deg,rgba(0,0,0,.2) 0 2px,transparent 2px 6px)}
+.ct::before,.ct::after{content:"";position:absolute;top:2px;width:4px;height:4px;background:rgba(0,0,0,.45);box-shadow:0 26px 0 rgba(0,0,0,.45)}
+.ct::before{left:2px}.ct::after{right:2px}
+.ct.lg{width:96px;height:52px;display:flex;align-items:center;justify-content:center;font:600 26px 'Barlow Condensed',sans-serif;color:#131416}
+.ct.lg::before,.ct.lg::after{width:5px;height:5px;top:3px;box-shadow:0 39px 0 rgba(0,0,0,.45)}
+.atlas{background-color:#F26B1D}
+.ct.strand{background-image:repeating-linear-gradient(45deg,rgba(19,20,22,.6) 0 3px,transparent 3px 8px),repeating-linear-gradient(90deg,rgba(0,0,0,.2) 0 2px,transparent 2px 6px)}
+.ct.empty{background:none;border:1px dashed #7D8186}
+.ct.empty::before,.ct.empty::after{display:none}
+a{color:#FFD31A}a:hover{color:#FFE36B}
+.step{display:flex;gap:10px;align-items:baseline;padding:12px 0;border-bottom:2px solid transparent;color:#A3A6AA;text-decoration:none}
+.step.on{color:#EDEBE6;border-bottom-color:#FFD31A}
+</style>
+</helmet>
+<div style="min-height: 900px; background: #131416; color: #EDEBE6; font-family: Barlow, system-ui, sans-serif; display: flex; flex-direction: column;">
+  <header style="display: flex; align-items: center; gap: 24px; padding: 0 32px; min-height: 56px; border-bottom: 1px solid #2F3338; flex-wrap: wrap;">
+    <span style="font-weight: 600; font-size: 18px;">Freight exchange</span>
+    <span class="mono" style="font-size: 13px; color: #A3A6AA;">live · 18 Oct 10:19:52 UTC</span>
+    <label style="margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 14px; color: #A3A6AA; cursor: pointer;"><input type="checkbox" style="accent-color: #E5399B; width: 18px; height: 18px;">X-ray: show hidden limits</label>
+    <span style="font-size: 14px; color: #A3A6AA;">Demo view · read only</span>
+  </header>
+
+  <div style="padding: 32px 40px 40px; display: flex; flex-direction: column; gap: 32px; flex-grow: 1;">
+    <nav aria-label="Recovery steps" style="display: flex; gap: 40px; border-bottom: 1px solid #2F3338; flex-wrap: wrap;">
+      <a class="step" href="MarketDisruption.dc.html"><span class="mono">1</span>Disruption</a>
+      <a class="step" href="MarketNegotiation.dc.html"><span class="mono">2</span>Negotiation</a>
+      <a class="step on" href="MarketAllocation.dc.html"><span class="mono">3</span>Allocation</a>
+    </nav>
+
+    <div style="display: flex; gap: 0; flex-wrap: wrap; align-items: stretch;">
+      <div style="flex: 1 1 360px; background: #23262A; padding: 28px 32px; display: flex; flex-direction: column; gap: 8px;">
+        <div class="lbl">First come, first served</div>
+        <div class="mono" style="font-size: 120px; line-height: 120px; font-weight: 500; color: #A3A6AA;">1 / 3</div>
+        <div style="font-size: 16px; color: #A3A6AA; max-width: 40ch;">A answers first and takes both Beacon slots. B and C have nothing that lands by 22 Oct.</div>
+      </div>
+      <div style="flex: 1.3 1 420px; background: #FFD31A; color: #131416; padding: 28px 32px; display: flex; flex-direction: column; gap: 8px;">
+        <div class="lbl" style="color: #131416;">Exchange, all at once</div>
+        <div class="mono" style="font-size: 120px; line-height: 120px; font-weight: 500;">3 / 3</div>
+        <div style="font-size: 16px; max-width: 46ch;">A can wait until 25 Oct, so A goes on Cove and frees Beacon for B and C. Solved in <span class="mono">41 ms</span>.</div>
+      </div>
+    </div>
+
+    <section style="display: flex; flex-direction: column; gap: 18px;">
+      <div class="lbl">Where each container goes</div>
+      <div style="display: flex; gap: 48px; flex-wrap: wrap; align-items: flex-start;">
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div style="font-size: 15px; color: #A3A6AA;">From <span class="mono" style="color: #EDEBE6;">ATL-101</span>, withdrawn</div>
+          <div style="display: flex; gap: 8px;"><span class="ct lg atlas strand">A</span><span class="ct lg atlas strand">A</span><span class="ct lg atlas strand">B</span><span class="ct lg atlas strand">C</span></div>
+        </div>
+        <svg width="80" height="70" viewBox="0 0 80 70" aria-hidden="true" style="margin-top: 26px;"><path d="M4 35 L66 35 M56 25 L68 35 L56 45" stroke="#7D8186" stroke-width="2" fill="none"></path></svg>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div style="font-size: 15px;"><span style="display: inline-block; width: 10px; height: 10px; background: #1FAE6E; margin-right: 8px;"></span>Cove <span class="mono" style="color: #A3A6AA;">COV-301 · arrives 24 Oct</span></div>
+          <div style="display: flex; gap: 8px;"><span class="ct lg atlas" style="outline: 3px solid #1FAE6E; outline-offset: 2px;">A</span><span class="ct lg atlas" style="outline: 3px solid #1FAE6E; outline-offset: 2px;">A</span><span class="ct lg empty"></span></div>
+          <div style="font-size: 14px;"><span style="color: #43C47A;">✓</span> Confirmed · <span class="mono">$5,200</span> per container</div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div style="font-size: 15px;"><span style="display: inline-block; width: 10px; height: 10px; background: #8B6CF0; margin-right: 8px;"></span>Beacon <span class="mono" style="color: #A3A6AA;">BEA-201 · arrives 22 Oct</span></div>
+          <div style="display: flex; gap: 8px;"><span class="ct lg atlas" style="outline: 3px solid #8B6CF0; outline-offset: 2px;">B</span><span class="ct lg atlas" style="outline: 3px dashed #8B6CF0; outline-offset: 2px; opacity: .8;">C</span></div>
+          <div style="font-size: 14px;"><span style="color: #43C47A;">✓</span> B confirmed · <span class="mono">$5,500</span></div>
+          <div style="font-size: 14px; color: #FFA51F;">◷ C: <span class="mono">$5,500</span> is <span class="mono">$500</span> over C's limit. Asked in ASI:One at <span class="mono">10:19:58</span>.</div>
+        </div>
+      </div>
+    </section>
+
+    <div style="margin-top: auto; border-top: 1px solid #2F3338; padding-top: 16px; display: flex; gap: 32px; flex-wrap: wrap; font-size: 14px; color: #A3A6AA;">
+      <span>Every offer checked against real ship space first. Cove claimed 4 open slots, had 3: corrected before solving.</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

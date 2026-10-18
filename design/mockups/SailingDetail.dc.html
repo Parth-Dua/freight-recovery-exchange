@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sailing ATL-101</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&amp;family=Barlow+Condensed:wght@500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#131416}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.cond{font-family:'Barlow Condensed',Barlow,sans-serif}
+.lbl{font-size:12px;line-height:16px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#A3A6AA}
+.ct{position:relative;flex:none;width:64px;height:36px;box-sizing:border-box;border:1px solid rgba(0,0,0,.45);background-image:repeating-linear-gradient(90deg,rgba(0,0,0,.2) 0 2px,transparent 2px 6px)}
+.ct::before,.ct::after{content:"";position:absolute;top:2px;width:4px;height:4px;background:rgba(0,0,0,.45);box-shadow:0 26px 0 rgba(0,0,0,.45)}
+.ct::before{left:2px}.ct::after{right:2px}
+.ct.sm{width:28px;height:16px}
+.ct.sm::before,.ct.sm::after{width:3px;height:3px;top:1px;box-shadow:0 10px 0 rgba(0,0,0,.45)}
+.ct.lg{width:120px;height:64px}
+.ct.lg::before,.ct.lg::after{width:6px;height:6px;top:3px;box-shadow:0 50px 0 rgba(0,0,0,.45)}
+.atlas{background-color:#F26B1D}
+.ct.empty{background:none;border:1px dashed #7D8186}
+.ct.empty::before,.ct.empty::after{display:none}
+a{color:#FFD31A}a:hover{color:#FFE36B}
+.nav a{color:#A3A6AA;text-decoration:none;padding:17px 0;border-bottom:2px solid transparent}
+.nav a.on{color:#EDEBE6;border-bottom-color:#FFD31A}
+td,th{padding:12px 16px 12px 0;text-align:left;border-bottom:1px solid #2F3338;font-weight:400}
+th{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#A3A6AA;font-weight:600}
+</style>
+</helmet>
+<div style="min-height: 900px; background: #131416; color: #EDEBE6; font-family: Barlow, system-ui, sans-serif; display: flex; flex-direction: column;">
+  <header style="display: flex; align-items: center; gap: 40px; padding: 0 32px; min-height: 56px; border-bottom: 1px solid #2F3338; flex-wrap: wrap;">
+    <button aria-label="Switch carrier" style="display: flex; align-items: center; gap: 10px; background: none; border: 0; padding: 0; color: #EDEBE6; font: 600 18px Barlow, sans-serif; cursor: pointer;"><span class="ct sm atlas"></span>Atlas Lines<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" stroke="#A3A6AA" stroke-width="1.5" fill="none"></path></svg></button>
+    <nav class="nav" style="display: flex; gap: 28px; font-size: 15px;"><a href="Main.dc.html" class="on">Sailings</a><a href="Pricing.dc.html">Pricing</a><a href="AgentActivity.dc.html">Agent activity</a><a href="Risk.dc.html">Risk</a></nav>
+    <span style="margin-left: auto; font-size: 14px; color: #A3A6AA;">Dubai operations desk</span>
+    <a href="MarketNegotiation.dc.html" style="font-size: 14px; text-decoration: none;">Market view ↗</a>
+  </header>
+
+  <div style="display: flex; flex-wrap: wrap; flex-grow: 1;">
+    <main style="flex: 999 1 640px; min-width: 0; padding: 28px 48px 48px; display: flex; flex-direction: column; gap: 36px; box-sizing: border-box;">
+      <a href="Main.dc.html" style="font-size: 14px; color: #A3A6AA; text-decoration: none;">← All sailings</a>
+      <div style="display: flex; align-items: flex-end; gap: 32px; flex-wrap: wrap;">
+        <div>
+          <div class="mono" style="font-size: 96px; line-height: 96px; font-weight: 500; letter-spacing: -0.03em;">ATL-101</div>
+          <div style="margin-top: 10px; font-size: 18px; color: #A3A6AA;">Atlas Meridian · AEJEA Jebel Ali → INBOM Mumbai</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; color: #FF5A4E; font-size: 15px; padding-bottom: 8px;"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 15 14.5H1z" fill="none" stroke="#FF5A4E" stroke-width="1.5"></path><path d="M8 6v4M8 12v.5" stroke="#FF5A4E" stroke-width="1.5"></path></svg>Route crosses the Hormuz advisory</div>
+      </div>
+
+      <section style="display: flex; flex-direction: column; gap: 14px;">
+        <div class="lbl">Exchange slots · 4 of 4 booked</div>
+        <img src="/_blob/beaed4ba4ae3b05aaa9e86997a0b4a7a" alt="Atlas Meridian side profile with its four exchange slots in orange among other cargo" style="display: block; width: 100%; max-width: 760px; height: auto;">
+        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+          <div style="display: flex; flex-direction: column; gap: 6px;"><span class="ct lg atlas"></span><span class="mono" style="font-size: 12px; color: #A3A6AA;">ATLU 410227 3 · A</span></div>
+          <div style="display: flex; flex-direction: column; gap: 6px;"><span class="ct lg atlas"></span><span class="mono" style="font-size: 12px; color: #A3A6AA;">ATLU 410228 9 · A</span></div>
+          <div style="display: flex; flex-direction: column; gap: 6px;"><span class="ct lg atlas"></span><span class="mono" style="font-size: 12px; color: #A3A6AA;">ATLU 410229 4 · B</span></div>
+          <div style="display: flex; flex-direction: column; gap: 6px;"><span class="ct lg atlas"></span><span class="mono" style="font-size: 12px; color: #A3A6AA;">ATLU 410230 0 · C</span></div>
+        </div>
+      </section>
+
+      <section style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; border-top: 1px solid #2F3338; padding-top: 24px;">
+        <div><div class="lbl">Departs</div><div class="mono" style="font-size: 20px; margin-top: 6px;">19 Oct 14:30</div><div style="font-size: 13px; color: #A3A6AA;">Gulf Standard Time</div></div>
+        <div><div class="lbl">Arrives</div><div class="mono" style="font-size: 20px; margin-top: 6px;">22 Oct 06:00</div><div style="font-size: 13px; color: #A3A6AA;">India Standard Time</div></div>
+        <div><div class="lbl">Space left</div><div class="mono" style="font-size: 20px; margin-top: 6px;">None</div><div style="font-size: 13px; color: #A3A6AA;">agent declines new requests</div></div>
+        <div><div class="lbl">Booked value</div><div class="mono" style="font-size: 20px; margin-top: 6px;">$10,690</div><div style="font-size: 13px; color: #A3A6AA;">3 bookings</div></div>
+      </section>
+
+      <section>
+        <div class="lbl" style="margin-bottom: 4px;">Bookings on this sailing</div>
+        <table style="width: 100%; border-collapse: collapse; font-size: 15px;">
+          <thead><tr><th>Booking</th><th>Buyer</th><th>Containers</th><th>Price</th><th>Paid</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">BK-28C01D37</td><td>Buyer 3A9</td><td class="mono">2 × 20GP</td><td class="mono">$5,380</td><td class="mono" style="color: #A3A6AA;">17 Oct 21:04:12</td></tr>
+            <tr><td class="mono">BK-0A14FFE2</td><td>Buyer 7F2</td><td class="mono">1 × 20GP</td><td class="mono">$2,690</td><td class="mono" style="color: #A3A6AA;">18 Oct 08:51:47</td></tr>
+            <tr><td class="mono">BK-71BC02A9</td><td>Buyer C41</td><td class="mono">1 × 20GP</td><td class="mono">$2,620</td><td class="mono" style="color: #A3A6AA;">18 Oct 09:03:30</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+        <a href="Pricing.dc.html" style="background: #FFD31A; color: #131416; text-decoration: none; font-weight: 600; padding: 12px 22px; border-radius: 2px;">Edit pricing</a>
+        <a href="Risk.dc.html" style="color: #FF5A4E; border: 1px solid #FF5A4E; text-decoration: none; font-weight: 600; padding: 11px 21px; border-radius: 2px;">Review cancellation</a>
+      </div>
+    </main>
+
+    <aside style="flex: 1 1 420px; max-width: 520px; border-left: 1px solid #2F3338; display: flex; flex-direction: column;">
+      <div style="padding: 24px 28px; border-bottom: 1px solid #2F3338; display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 10px; color: #E5399B;"><span style="width: 18px; height: 12px; background: repeating-linear-gradient(45deg,#E5399B 0 2px,transparent 2px 5px); border: 1px solid #E5399B;"></span><span class="lbl" style="color: #E5399B;">Active advisory</span></div>
+        <div style="font-size: 18px; font-weight: 600;">Vessel security incident, Strait of Hormuz</div>
+        <div class="mono" style="font-size: 13px; color: #A3A6AA;">SIM-ADV-2026-014 · 17 Oct 06:00 UTC · simulated</div>
+        <a href="Risk.dc.html" style="font-size: 14px;">See affected sailings</a>
+      </div>
+      <div style="position: relative; flex-grow: 1; min-height: 480px;">
+        <svg viewBox="240 120 480 520" preserveAspectRatio="xMidYMid slice" role="img" aria-label="ATL-101 route through the Strait of Hormuz" style="position: absolute; inset: 0; width: 100%; height: 100%;">
+          <defs><pattern id="hz2" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2.5" height="7" fill="#E5399B"></rect></pattern></defs>
+          <rect x="0" y="0" width="1200" height="920" fill="#0E0F11"></rect>
+          <path d="M0 56 L16 84 L64 156 L88 188 L112 204 L124 196 L144 204 L144 252 L132 268 L184 272 L240 268 L268 248 L282 240 L296 228 L316 212 L324 196 L334 185 L338 198 L332 220 L334 240 L344 260 L350 268 L384 290 L424 296 L456 328 L472 340 L452 384 L424 416 L392 472 L352 512 L296 528 L240 564 L168 616 L80 640 L0 680 Z" fill="#1D1F23" stroke="#3E4349"></path>
+          <path d="M0 0 L1200 0 L1200 916 L1180 916 L1136 884 L1112 840 L1080 760 L1060 700 L1032 624 L1008 560 L996 504 L994 476 L992 424 L984 380 L968 388 L912 412 L880 400 L840 348 L864 330 L888 320 L836 316 L816 296 L784 280 L760 248 L744 224 L640 228 L572 236 L504 228 L440 224 L392 216 L372 204 L356 164 L332 152 L292 176 L240 172 L184 144 L140 124 L112 84 L92 72 L20 40 L0 40 Z" fill="#1D1F23" stroke="#3E4349"></path>
+          <path d="M316 188 L336 170 L356 166 L366 192 L352 212 L336 204 Z" fill="url(#hz2)" stroke="#E5399B"></path>
+          <path d="M281 239 L308 210 L332 178 L354 196 L384 236 L440 276 L560 336 L720 404" fill="none" stroke="#F26B1D" stroke-width="2.5"></path>
+          <circle cx="281" cy="239" r="4.5" fill="#EDEBE6"></circle>
+          <text x="236" y="262" font-family="IBM Plex Mono" font-size="14" fill="#EDEBE6">AEJEA</text>
+          <text x="372" y="160" font-family="Barlow" font-size="14" fill="#E5399B">Hormuz</text>
+          <text x="400" y="440" font-family="Barlow" font-size="13" fill="#7D8186" letter-spacing="3">OMAN</text>
+          <text x="560" y="140" font-family="Barlow" font-size="13" fill="#7D8186" letter-spacing="3">IRAN</text>
+          <text x="560" y="540" font-family="Barlow" font-size="13" fill="#7D8186" font-style="italic">to Mumbai →</text>
+        </svg>
+      </div>
+    </aside>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

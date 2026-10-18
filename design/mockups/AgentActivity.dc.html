@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agent activity</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&amp;family=Barlow+Condensed:wght@500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#131416}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.cond{font-family:'Barlow Condensed',Barlow,sans-serif}
+.lbl{font-size:12px;line-height:16px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#A3A6AA}
+.ct{position:relative;flex:none;width:64px;height:36px;box-sizing:border-box;border:1px solid rgba(0,0,0,.45);background-image:repeating-linear-gradient(90deg,rgba(0,0,0,.2) 0 2px,transparent 2px 6px)}
+.ct::before,.ct::after{content:"";position:absolute;top:2px;width:4px;height:4px;background:rgba(0,0,0,.45);box-shadow:0 26px 0 rgba(0,0,0,.45)}
+.ct::before{left:2px}.ct::after{right:2px}
+.ct.sm{width:28px;height:16px}
+.ct.sm::before,.ct.sm::after{width:3px;height:3px;top:1px;box-shadow:0 10px 0 rgba(0,0,0,.45)}
+.atlas{background-color:#F26B1D}
+.ct.empty{background:none;border:1px dashed #7D8186}
+.ct.empty::before,.ct.empty::after{display:none}
+a{color:#FFD31A}a:hover{color:#FFE36B}
+.nav a{color:#A3A6AA;text-decoration:none;padding:17px 0;border-bottom:2px solid transparent}
+.nav a.on{color:#EDEBE6;border-bottom-color:#FFD31A}
+td,th{padding:13px 14px 13px 0;text-align:left;border-bottom:1px solid #2F3338;font-weight:400;vertical-align:top}
+th{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#A3A6AA;font-weight:600}
+.f button{background:none;border:0;border-bottom:2px solid transparent;color:#A3A6AA;font:500 15px Barlow,sans-serif;padding:8px 0;cursor:pointer}
+.f button.on{color:#EDEBE6;border-bottom-color:#FFD31A}
+.ok{color:#43C47A}.warn{color:#FFA51F}
+</style>
+</helmet>
+<div style="min-height: 900px; background: #131416; color: #EDEBE6; font-family: Barlow, system-ui, sans-serif; display: flex; flex-direction: column;">
+  <header style="display: flex; align-items: center; gap: 40px; padding: 0 32px; min-height: 56px; border-bottom: 1px solid #2F3338; flex-wrap: wrap;">
+    <button aria-label="Switch carrier" style="display: flex; align-items: center; gap: 10px; background: none; border: 0; padding: 0; color: #EDEBE6; font: 600 18px Barlow, sans-serif; cursor: pointer;"><span class="ct sm atlas"></span>Atlas Lines<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" stroke="#A3A6AA" stroke-width="1.5" fill="none"></path></svg></button>
+    <nav class="nav" style="display: flex; gap: 28px; font-size: 15px;"><a href="Main.dc.html">Sailings</a><a href="Pricing.dc.html">Pricing</a><a href="AgentActivity.dc.html" class="on">Agent activity</a><a href="Risk.dc.html">Risk</a></nav>
+    <span style="margin-left: auto; font-size: 14px; color: #A3A6AA;">Dubai operations desk</span>
+    <a href="MarketNegotiation.dc.html" style="font-size: 14px; text-decoration: none;">Market view ↗</a>
+  </header>
+
+  <div style="display: flex; flex-wrap: wrap; flex-grow: 1;">
+    <main style="flex: 999 1 640px; min-width: 0; padding: 36px 40px; display: flex; flex-direction: column; gap: 28px; box-sizing: border-box;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; flex-wrap: wrap;">
+        <div>
+          <h1 class="cond" style="margin: 0; font-size: 40px; line-height: 44px; font-weight: 600;">Agent activity</h1>
+          <p style="margin: 8px 0 0; font-size: 17px; color: #A3A6AA;">Everything Atlas's agent did today, checked against your pricing settings.</p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 20px;">
+          <span style="display: flex; align-items: center; gap: 8px; font-size: 15px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #43C47A;"></span>Running · settings v3</span>
+          <button type="button" style="display: flex; align-items: center; gap: 8px; background: none; color: #EDEBE6; border: 1px solid #4A4F55; font: 600 15px Barlow, sans-serif; padding: 10px 16px; border-radius: 2px; cursor: pointer;"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="1.5" width="2.5" height="9" fill="#EDEBE6"></rect><rect x="7.5" y="1.5" width="2.5" height="9" fill="#EDEBE6"></rect></svg>Pause agent</button>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 48px; flex-wrap: wrap; border-top: 1px solid #2F3338; border-bottom: 1px solid #2F3338; padding: 20px 0;">
+        <div style="display: flex; align-items: baseline; gap: 10px;"><span class="mono" style="font-size: 44px; line-height: 48px;">38</span><span style="color: #A3A6AA;">actions today</span></div>
+        <div style="display: flex; align-items: baseline; gap: 10px;"><span class="mono" style="font-size: 44px; line-height: 48px;">0</span><span style="color: #A3A6AA;">limit breaches</span></div>
+        <a href="#" style="display: flex; align-items: baseline; gap: 10px; text-decoration: none;"><span class="mono warn" style="font-size: 44px; line-height: 48px;">1</span><span class="warn">blocked before sending</span></a>
+      </div>
+
+      <div class="f" style="display: flex; gap: 24px; align-items: center; flex-wrap: wrap;">
+        <button type="button" class="on">All</button><button type="button">Quotes</button><button type="button">Counters</button><button type="button">Blocked</button><button type="button">Operator actions</button>
+        <label style="margin-left: auto; font-size: 14px; color: #A3A6AA; display: flex; gap: 8px; align-items: center;">Sailing <select style="background: #1B1D20; color: #EDEBE6; border: 1px solid #4A4F55; border-radius: 2px; font: 15px Barlow; padding: 6px 10px;"><option>All sailings</option></select></label>
+      </div>
+
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 15px; min-width: 720px;">
+          <thead><tr><th>Time</th><th>Action</th><th>Sailing</th><th>Buyer</th><th>Price</th><th>Check</th></tr></thead>
+          <tbody>
+            <tr style="background: #1B1D20;"><td class="mono">10:24:37</td><td class="warn">Offer blocked</td><td class="mono">ATL-103</td><td>Buyer 7F2</td><td class="mono">$2,250</td><td class="warn">⚠ Below floor ($2,300). Not sent.</td></tr>
+            <tr><td class="mono">10:21:12</td><td>Accepted counter</td><td class="mono">ATL-102</td><td>Buyer 3A9</td><td class="mono">$2,610</td><td><span class="ok">✓</span> Within discount limit (min $2,594 at 50% full)</td></tr>
+            <tr><td class="mono">10:18:05</td><td>Countered</td><td class="mono">ATL-102</td><td>Buyer 3A9</td><td class="mono">$2,640</td><td><span class="ok">✓</span> Round 1 of 2</td></tr>
+            <tr><td class="mono">10:17:48</td><td style="color: #A3A6AA;">Buyer countered</td><td class="mono">ATL-102</td><td>Buyer 3A9</td><td class="mono" style="color: #A3A6AA;">$2,520</td><td style="color: #A3A6AA;">Incoming offer</td></tr>
+            <tr><td class="mono">10:14:09</td><td>Quoted</td><td class="mono">ATL-102</td><td>Buyer 3A9</td><td class="mono">$2,730</td><td><span class="ok">✓</span> Above floor</td></tr>
+            <tr><td class="mono">10:02:51</td><td>Quoted</td><td class="mono">ATL-103</td><td>Buyer 7F2</td><td class="mono">$2,643</td><td><span class="ok">✓</span> Above floor</td></tr>
+            <tr><td class="mono">09:40:16</td><td>Sailing withdrawn</td><td class="mono">ATL-101</td><td>3 bookings</td><td class="mono" style="color: #A3A6AA;">n/a</td><td style="color: #A3A6AA;">Operator action · Hormuz advisory</td></tr>
+            <tr><td class="mono">09:12:03</td><td>Declined request</td><td class="mono">ATL-101</td><td>Buyer C41</td><td class="mono" style="color: #A3A6AA;">n/a</td><td><span class="ok">✓</span> Not enough space: 1 open, 2 asked</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+
+    <aside aria-label="Blocked offer details" style="flex: 1 1 360px; max-width: 440px; border-left: 1px solid #2F3338; background: #1B1D20; padding: 32px 32px; display: flex; flex-direction: column; gap: 24px; box-sizing: border-box;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+        <div>
+          <div class="lbl warn">Blocked before sending</div>
+          <h2 class="cond" style="margin: 6px 0 0; font-size: 32px; line-height: 36px; font-weight: 600;">Offer blocked</h2>
+          <div class="mono" style="margin-top: 6px; font-size: 14px; color: #A3A6AA;">10:24:37 · ATL-103 · Buyer 7F2</div>
+        </div>
+        <button type="button" aria-label="Close details" style="background: none; border: 0; color: #A3A6AA; font-size: 22px; cursor: pointer; padding: 4px;">×</button>
+      </div>
+      <div style="border-top: 1px solid #2F3338; padding-top: 18px;">
+        <div class="lbl">What the agent tried to send</div>
+        <p style="margin: 10px 0 0; font-size: 18px; line-height: 26px;">"We can offer 1 container on ATL-103 at $2,250."</p>
+        <div style="margin-top: 8px; font-size: 14px; color: #A3A6AA;">Never reached the buyer.</div>
+      </div>
+      <div style="border-top: 1px solid #2F3338; padding-top: 18px; display: flex; flex-direction: column; gap: 14px; font-size: 15px;">
+        <div class="lbl">Guardrail checks</div>
+        <div><span class="ok">✓</span> Signed with Atlas's agent key</div>
+        <div><span class="ok">✓</span> <span class="mono">ATL-103</span> is active</div>
+        <div style="display: flex; flex-direction: column; gap: 8px;"><span><span class="ok">✓</span> Space: 5 of 6 slots open</span><span style="display: flex; gap: 4px;"><span class="ct sm atlas"></span><span class="ct sm empty"></span><span class="ct sm empty"></span><span class="ct sm empty"></span><span class="ct sm empty"></span><span class="ct sm empty"></span></span></div>
+        <div><span class="ok">✓</span> Round 1 of 2</div>
+        <div class="warn">⚠ $2,250 is under your $2,300 floor</div>
+        <div class="warn">⚠ 14.9% off the $2,643 quote; limit at 17% full is 7%</div>
+      </div>
+      <div style="margin-top: auto; border-top: 1px solid #2F3338; padding-top: 16px; font-size: 13px; color: #A3A6AA;">
+        Checked against settings <span class="mono">v3</span>, saved <span class="mono">18 Oct 09:05:44</span>. <a href="Pricing.dc.html">Open pricing</a>
+      </div>
+    </aside>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

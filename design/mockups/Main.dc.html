@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sailings</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&amp;family=Barlow+Condensed:wght@500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#131416}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.cond{font-family:'Barlow Condensed',Barlow,sans-serif}
+.lbl{font-size:12px;line-height:16px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#A3A6AA}
+.ct{position:relative;flex:none;width:64px;height:36px;box-sizing:border-box;border:1px solid rgba(0,0,0,.45);background-image:repeating-linear-gradient(90deg,rgba(0,0,0,.2) 0 2px,transparent 2px 6px)}
+.ct::before,.ct::after{content:"";position:absolute;top:2px;width:4px;height:4px;background:rgba(0,0,0,.45);box-shadow:0 26px 0 rgba(0,0,0,.45)}
+.ct::before{left:2px}.ct::after{right:2px}
+.ct.sm{width:28px;height:16px}
+.ct.sm::before,.ct.sm::after{width:3px;height:3px;top:1px;box-shadow:0 10px 0 rgba(0,0,0,.45)}
+.atlas{background-color:#F26B1D}.beacon{background-color:#8B6CF0}.cove{background-color:#1FAE6E}.meridian{background-color:#3B6FE8}.dhow{background-color:#C08A55}
+.ct.empty{background:none;border:1px dashed #7D8186}
+.ct.empty::before,.ct.empty::after{display:none}
+a{color:#FFD31A}a:hover{color:#FFE36B}
+.nav a{color:#A3A6AA;text-decoration:none;padding:17px 0;border-bottom:2px solid transparent}
+.nav a.on{color:#EDEBE6;border-bottom-color:#FFD31A}
+.row{display:grid;grid-template-columns:1fr auto;gap:6px 12px;padding:16px 24px;border-bottom:1px solid #2F3338;text-decoration:none;color:#EDEBE6}
+.row:hover{background:#1B1D20}
+</style>
+</helmet>
+<div style="min-height: 900px; background: #131416; color: #EDEBE6; font-family: Barlow, system-ui, sans-serif; display: flex; flex-direction: column;">
+  <header style="display: flex; align-items: center; gap: 40px; padding: 0 32px; min-height: 56px; border-bottom: 1px solid #2F3338; flex-wrap: wrap;">
+    <button aria-label="Switch carrier" style="display: flex; align-items: center; gap: 10px; background: none; border: 0; padding: 0; color: #EDEBE6; font: 600 18px Barlow, sans-serif; cursor: pointer;"><span class="ct sm atlas"></span>Atlas Lines<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" stroke="#A3A6AA" stroke-width="1.5" fill="none"></path></svg></button>
+    <nav class="nav" style="display: flex; gap: 28px; font-size: 15px;"><a href="Main.dc.html" class="on">Sailings</a><a href="Pricing.dc.html">Pricing</a><a href="AgentActivity.dc.html">Agent activity</a><a href="Risk.dc.html">Risk</a></nav>
+    <span style="margin-left: auto; font-size: 14px; color: #A3A6AA;">Dubai operations desk</span>
+    <a href="MarketNegotiation.dc.html" style="font-size: 14px; text-decoration: none;">Market view ↗</a>
+  </header>
+
+  <div style="display: flex; flex-wrap: wrap; flex-grow: 1;">
+    <section style="flex: 1 1 340px; max-width: 380px; border-right: 1px solid #2F3338;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; padding: 24px 24px 16px;">
+        <h1 class="cond" style="margin: 0; font-size: 28px; font-weight: 600;">Sailings</h1>
+        <span style="font-size: 14px; color: #A3A6AA;">5 scheduled · 1 at risk</span>
+      </div>
+      <a class="row" href="SailingDetail.dc.html" style="background: #1B1D20;">
+        <span class="mono" style="font-size: 18px; color: #FFD31A;">ATL-101</span>
+        <span style="font-size: 13px; color: #FF5A4E;">Route at risk</span>
+        <span class="mono" style="font-size: 13px; color: #A3A6AA;">AEJEA → INBOM · dep 19 Oct 14:30</span>
+        <span style="display: flex; gap: 4px;"><span class="ct sm atlas"></span><span class="ct sm atlas"></span><span class="ct sm atlas"></span><span class="ct sm atlas"></span></span>
+      </a>
+      <a class="row" href="SailingDetail.dc.html">
+        <span class="mono" style="font-size: 18px;">ATL-102</span>
+        <span style="font-size: 13px; color: #A3A6AA;">Scheduled</span>
+        <span class="mono" style="font-size: 13px; color: #A3A6AA;">AEJEA → INBOM · dep 23 Oct 09:15</span>
+        <span style="display: flex; gap: 4px;"><span class="ct sm atlas"></span><span class="ct sm atlas"></span><span class="ct sm empty"></span><span class="ct sm empty"></span></span>
+      </a>
+      <a class="row" href="SailingDetail.dc.html">
+        <span class="mono" style="font-size: 18px;">ATL-103</span>
+        <span style="font-size: 13px; color: #A3A6AA;">Scheduled</span>
+        <span class="mono" style="font-size: 13px; color: #A3A6AA;">AEJEA → INBOM · dep 30 Oct 11:00</span>
+        <span style="display: flex; gap: 4px;"><span class="ct sm atlas"></span><span class="ct sm empty"></span><span class="ct sm empty"></span><span class="ct sm empty"></span><span class="ct sm empty"></span><span class="ct sm empty"></span></span>
+      </a>
+      <a class="row" href="SailingDetail.dc.html">
+        <span class="mono" style="font-size: 18px;">ATL-151</span>
+        <span style="font-size: 13px; color: #A3A6AA;">Scheduled</span>
+        <span class="mono" style="font-size: 13px; color: #A3A6AA;">SADMM → INBOM · dep 20 Oct 21:40</span>
+        <span style="display: flex; gap: 4px;"><span class="ct sm atlas"></span><span class="ct sm atlas"></span><span class="ct sm empty"></span><span class="ct sm empty"></span><span class="ct sm empty"></span><span class="ct sm empty"></span></span>
+      </a>
+      <a class="row" href="SailingDetail.dc.html">
+        <span class="mono" style="font-size: 18px;">ATL-152</span>
+        <span style="font-size: 13px; color: #A3A6AA;">Scheduled</span>
+        <span class="mono" style="font-size: 13px; color: #A3A6AA;">SADMM → INBOM · dep 27 Oct 21:40</span>
+        <span style="display: flex; gap: 4px;"><span class="ct sm empty"></span><span class="ct sm empty"></span><span class="ct sm empty"></span><span class="ct sm empty"></span><span class="ct sm empty"></span><span class="ct sm empty"></span></span>
+      </a>
+    </section>
+
+    <section style="flex: 1 1 420px; max-width: 480px; padding: 32px 40px; display: flex; flex-direction: column; gap: 28px; border-right: 1px solid #2F3338; box-sizing: border-box;">
+      <div>
+        <div class="lbl">Selected sailing</div>
+        <div class="mono" style="font-size: 64px; line-height: 72px; font-weight: 500; letter-spacing: -0.02em;">ATL-101</div>
+        <div style="font-size: 16px; color: #A3A6AA;"><span style="color: #EDEBE6;">Atlas Meridian</span> · 4 × 20GP offered on the exchange</div>
+      </div>
+      <figure style="margin: 0; position: relative; padding-top: 40px;">
+        <img src="/_blob/beaed4ba4ae3b05aaa9e86997a0b4a7a" alt="Atlas Meridian side profile. The deck is full of other cargo in gray; Atlas's four exchange slots, mid-ship, are orange." style="display: block; width: 100%; height: auto;">
+        <span style="position: absolute; left: 63.6%; top: calc(40px + 47%); width: 7.8%; height: 18%; border: 1.5px solid #F26B1D;"></span>
+        <span style="position: absolute; left: 67.5%; top: 0; height: calc(40px + 47%); border-left: 1px solid #F26B1D;"></span>
+        <span class="mono" style="position: absolute; left: calc(67.5% + 8px); top: 0; font-size: 12px; color: #F26B1D; white-space: nowrap;">4 slots sold on the exchange</span>
+      </figure>
+      <div style="display: flex; align-items: baseline; gap: 16px;">
+        <span class="mono" style="font-size: 32px;">4 / 4</span><span style="color: #A3A6AA;">exchange slots booked · full</span>
+      </div>
+      <dl style="margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 10px 24px; font-size: 15px; border-top: 1px solid #2F3338; padding-top: 20px;">
+        <dt style="color: #A3A6AA;">Route</dt><dd class="mono" style="margin: 0;">AEJEA Jebel Ali → INBOM Mumbai</dd>
+        <dt style="color: #A3A6AA;">Departs</dt><dd class="mono" style="margin: 0;">19 Oct 14:30 GST</dd>
+        <dt style="color: #A3A6AA;">Arrives</dt><dd class="mono" style="margin: 0;">22 Oct 06:00 IST</dd>
+        <dt style="color: #A3A6AA;">Bookings</dt><dd class="mono" style="margin: 0;">3 · $10,690 booked</dd>
+      </dl>
+      <a href="Risk.dc.html" style="display: flex; align-items: center; gap: 10px; font-size: 15px; color: #E5399B; text-decoration: none;"><span style="width: 18px; height: 12px; background: repeating-linear-gradient(45deg,#E5399B 0 2px,transparent 2px 5px); border: 1px solid #E5399B;"></span>Hormuz advisory on this route · SIM-ADV-2026-014</a>
+      <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+        <a href="SailingDetail.dc.html" style="background: #FFD31A; color: #131416; text-decoration: none; font-weight: 600; padding: 12px 22px; border-radius: 2px;">Open sailing</a>
+      </div>
+    </section>
+
+    <section style="flex: 999 1 420px; min-width: 0; position: relative; min-height: 600px;">
+      <svg viewBox="200 70 860 600" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Map of the Persian Gulf, Gulf of Oman and Arabian Sea with ATL-101's route from Jebel Ali through the Strait of Hormuz to Mumbai" style="position: absolute; inset: 0; width: 100%; height: 100%;">
+        <defs><pattern id="hz" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2.5" height="7" fill="#E5399B"></rect></pattern></defs>
+        <rect x="0" y="0" width="1200" height="920" fill="#0E0F11"></rect>
+        <g stroke="#1C1E21" stroke-width="1"><line x1="280" y1="0" x2="280" y2="920"></line><line x1="480" y1="0" x2="480" y2="920"></line><line x1="680" y1="0" x2="680" y2="920"></line><line x1="880" y1="0" x2="880" y2="920"></line><line x1="0" y1="240" x2="1200" y2="240"></line><line x1="0" y1="440" x2="1200" y2="440"></line></g>
+        <path d="M0 56 L16 84 L64 156 L88 188 L112 204 L124 196 L144 204 L144 252 L132 268 L184 272 L240 268 L268 248 L282 240 L296 228 L316 212 L324 196 L334 185 L338 198 L332 220 L334 240 L344 260 L350 268 L384 290 L424 296 L456 328 L472 340 L452 384 L424 416 L392 472 L352 512 L296 528 L240 564 L168 616 L80 640 L0 680 Z" fill="#1D1F23" stroke="#3E4349"></path>
+        <path d="M0 0 L1200 0 L1200 916 L1180 916 L1136 884 L1112 840 L1080 760 L1060 700 L1032 624 L1008 560 L996 504 L994 476 L992 424 L984 380 L968 388 L912 412 L880 400 L840 348 L864 330 L888 320 L836 316 L816 296 L784 280 L760 248 L744 224 L640 228 L572 236 L504 228 L440 224 L392 216 L372 204 L356 164 L332 152 L292 176 L240 172 L184 144 L140 124 L112 84 L92 72 L20 40 L0 40 Z" fill="#1D1F23" stroke="#3E4349"></path>
+        <path d="M316 188 L336 170 L356 166 L366 192 L352 212 L336 204 Z" fill="url(#hz)" stroke="#E5399B"></path>
+        <text x="372" y="168" fill="#E5399B" font-family="Barlow" font-size="15">Hormuz advisory</text>
+        <path d="M281 239 L308 210 L332 178 L354 196 L384 236 L440 276 L560 336 L720 404 L880 456 L992 480" fill="none" stroke="#F26B1D" stroke-width="2.5"></path>
+        <path d="M553 328 L571 336 L553 344 Z" fill="#F26B1D" transform="rotate(26 562 336)"></path>
+        <g font-family="IBM Plex Mono" font-size="14" fill="#EDEBE6">
+          <circle cx="281" cy="239" r="4.5" fill="#EDEBE6"></circle><text x="230" y="258">AEJEA</text>
+          <circle cx="994" cy="482" r="4.5" fill="#EDEBE6"></circle><text x="938" y="508">INBOM</text>
+          <circle cx="760" cy="247" r="3" fill="#7D8186"></circle><text x="768" y="243" fill="#A3A6AA">PKKHI</text>
+          <circle cx="868" cy="330" r="3" fill="#7D8186"></circle><text x="876" y="326" fill="#A3A6AA">INMUN</text>
+          <circle cx="349" cy="266" r="3" fill="#7D8186"></circle><text x="358" y="282" fill="#A3A6AA">OMSOH</text>
+        </g>
+        <g font-family="Barlow" font-size="13" fill="#7D8186" letter-spacing="3">
+          <text x="560" y="130">IRAN</text><text x="640" y="190">PAKISTAN</text><text x="1040" y="300">INDIA</text><text x="360" y="420">OMAN</text><text x="214" y="120" font-style="italic" letter-spacing="1">Persian Gulf</text><text x="560" y="520" font-style="italic" letter-spacing="1">Arabian Sea</text>
+        </g>
+        <g font-family="IBM Plex Mono" font-size="11" fill="#7D8186"><text x="1030" y="236">25°N</text><text x="1030" y="436">20°N</text><text x="1030" y="636">15°N</text></g>
+      </svg>
+      <div style="position: absolute; left: 24px; bottom: 20px; display: flex; gap: 20px; flex-wrap: wrap; font-size: 13px; color: #A3A6AA;">
+        <span style="display: flex; align-items: center; gap: 8px;"><span style="width: 22px; height: 0; border-top: 2.5px solid #F26B1D;"></span>ATL-101 route</span>
+        <span style="display: flex; align-items: center; gap: 8px;"><span style="width: 16px; height: 10px; background: repeating-linear-gradient(45deg,#E5399B 0 2px,transparent 2px 5px); border: 1px solid #E5399B;"></span>Advisory zone</span>
+      </div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

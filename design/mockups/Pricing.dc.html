@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pricing agent settings</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&amp;family=Barlow+Condensed:wght@500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#131416}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.cond{font-family:'Barlow Condensed',Barlow,sans-serif}
+.lbl{font-size:12px;line-height:16px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#A3A6AA}
+.ct{position:relative;flex:none;width:64px;height:36px;box-sizing:border-box;border:1px solid rgba(0,0,0,.45);background-image:repeating-linear-gradient(90deg,rgba(0,0,0,.2) 0 2px,transparent 2px 6px)}
+.ct::before,.ct::after{content:"";position:absolute;top:2px;width:4px;height:4px;background:rgba(0,0,0,.45);box-shadow:0 26px 0 rgba(0,0,0,.45)}
+.ct::before{left:2px}.ct::after{right:2px}
+.ct.sm{width:28px;height:16px}
+.ct.sm::before,.ct.sm::after{width:3px;height:3px;top:1px;box-shadow:0 10px 0 rgba(0,0,0,.45)}
+.atlas{background-color:#F26B1D}
+.ct.empty{background:none;border:1px dashed #7D8186}
+.ct.empty::before,.ct.empty::after{display:none}
+a{color:#FFD31A}a:hover{color:#FFE36B}
+.nav a{color:#A3A6AA;text-decoration:none;padding:17px 0;border-bottom:2px solid transparent}
+.nav a.on{color:#EDEBE6;border-bottom-color:#FFD31A}
+.seg{display:flex;border:1px solid #4A4F55;border-radius:2px}
+.seg label{flex:1;padding:14px 18px;cursor:pointer;border-right:1px solid #4A4F55;display:flex;flex-direction:column;gap:2px}
+.seg label:last-child{border-right:0}
+.seg input{position:absolute;opacity:0}
+.field{display:flex;flex-direction:column;gap:8px}
+.field label{font-size:15px;font-weight:600}
+.money{display:flex;align-items:center;border:1px solid #4A4F55;border-radius:2px;background:#1B1D20;max-width:280px}
+.money span{padding:0 0 0 14px;color:#A3A6AA}
+.money input{flex:1;min-width:0;background:none;border:0;color:#EDEBE6;font:500 20px 'IBM Plex Mono',monospace;padding:12px 14px 12px 6px}
+input:focus-visible,button:focus-visible{outline:2px solid #FFD31A;outline-offset:2px}
+</style>
+</helmet>
+<div style="min-height: 900px; background: #131416; color: #EDEBE6; font-family: Barlow, system-ui, sans-serif; display: flex; flex-direction: column;">
+  <header style="display: flex; align-items: center; gap: 40px; padding: 0 32px; min-height: 56px; border-bottom: 1px solid #2F3338; flex-wrap: wrap;">
+    <button aria-label="Switch carrier" style="display: flex; align-items: center; gap: 10px; background: none; border: 0; padding: 0; color: #EDEBE6; font: 600 18px Barlow, sans-serif; cursor: pointer;"><span class="ct sm atlas"></span>Atlas Lines<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" stroke="#A3A6AA" stroke-width="1.5" fill="none"></path></svg></button>
+    <nav class="nav" style="display: flex; gap: 28px; font-size: 15px;"><a href="Main.dc.html">Sailings</a><a href="Pricing.dc.html" class="on">Pricing</a><a href="AgentActivity.dc.html">Agent activity</a><a href="Risk.dc.html">Risk</a></nav>
+    <span style="margin-left: auto; font-size: 14px; color: #A3A6AA;">Dubai operations desk</span>
+    <a href="MarketNegotiation.dc.html" style="font-size: 14px; text-decoration: none;">Market view ↗</a>
+  </header>
+
+  <div style="display: flex; flex-wrap: wrap; gap: 0; flex-grow: 1; max-width: 1280px; width: 100%; margin: 0 auto; box-sizing: border-box; padding: 48px 32px;">
+    <form style="flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 36px; padding-right: 56px;">
+      <div>
+        <h1 class="cond" style="margin: 0; font-size: 40px; line-height: 44px; font-weight: 600;">Pricing agent</h1>
+        <p style="margin: 8px 0 0; font-size: 17px; color: #A3A6AA; max-width: 52ch;">How Atlas's agent quotes and how far it bends when a buyer pushes back.</p>
+      </div>
+
+      <fieldset style="border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px;">
+        <legend style="font-size: 15px; font-weight: 600; margin-bottom: 10px;">Business goal</legend>
+        <div class="seg">
+          <label><input type="radio" name="goal" value="fill"><span style="font-weight: 600;">Fill the ship</span><span style="font-size: 13px; color: #A3A6AA;">Bend more when space is empty</span></label>
+          <label style="background: #23262A; box-shadow: inset 0 -2px 0 #FFD31A;"><input type="radio" name="goal" value="balanced" checked><span style="font-weight: 600;">Balanced</span><span style="font-size: 13px; color: #A3A6AA;">Current setting</span></label>
+          <label><input type="radio" name="goal" value="margin"><span style="font-weight: 600;">Protect margin</span><span style="font-size: 13px; color: #A3A6AA;">Hold price, surge harder</span></label>
+        </div>
+      </fieldset>
+
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px;">
+        <div class="field">
+          <label for="target">Opening price per container</label>
+          <div class="money"><span>$</span><input id="target" value="2,600" inputmode="numeric"></div>
+          <span style="font-size: 13px; color: #A3A6AA;">Before the price rise for a fuller ship.</span>
+        </div>
+        <div class="field">
+          <label for="floor">Floor per container</label>
+          <div class="money"><span>$</span><input id="floor" value="2,300" inputmode="numeric"></div>
+          <span style="font-size: 13px; color: #A3A6AA;">Your agent never offers or accepts less.</span>
+        </div>
+      </div>
+
+      <details style="border-top: 1px solid #2F3338; border-bottom: 1px solid #2F3338; padding: 18px 0;">
+        <summary style="cursor: pointer; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; list-style: none;">
+          <span style="font-size: 16px; font-weight: 600;">Advanced pricing</span>
+          <span class="mono" style="font-size: 13px; color: #A3A6AA;">rise 10% · discount 8% empty, 2% full · crisis surge 15%</span>
+        </summary>
+      </details>
+
+      <div style="font-size: 14px; color: #A3A6AA;">Quote valid 10 min · hold space 60 min while a buyer pays · offer earliest arrival first · <a href="#">Company settings</a></div>
+    </form>
+
+    <aside style="flex: 1 1 360px; border-left: 1px solid #2F3338; padding-left: 48px; display: flex; flex-direction: column; gap: 28px;">
+      <div>
+        <div class="lbl">Live quote preview</div>
+        <div style="margin-top: 6px; font-size: 15px; color: #A3A6AA;">On <span class="mono" style="color: #EDEBE6;">ATL-102</span>, 2 of 4 slots booked</div>
+        <div style="display: flex; gap: 6px; margin-top: 14px;"><span class="ct atlas"></span><span class="ct atlas"></span><span class="ct empty"></span><span class="ct empty"></span></div>
+      </div>
+      <div>
+        <div style="font-size: 15px; color: #A3A6AA;">Opens at</div>
+        <div class="mono" style="font-size: 72px; line-height: 76px; font-weight: 500; letter-spacing: -0.03em;">$2,730</div>
+      </div>
+      <div>
+        <div style="font-size: 15px; color: #A3A6AA;">Accepts counters down to</div>
+        <div class="mono" style="font-size: 36px; line-height: 40px;">$2,594</div>
+        <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px; font-size: 14px; color: #A3A6AA;"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="2.5" y="6" width="9" height="6.5" fill="none" stroke="#A3A6AA"></rect><path d="M4.5 6V4a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="#A3A6AA"></path></svg>Only your agent sees these limits.</div>
+      </div>
+      <div style="border-top: 1px solid #2F3338; padding-top: 24px; display: flex; flex-direction: column; gap: 12px;">
+        <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+          <button type="button" style="background: #FFD31A; color: #131416; border: 0; font: 600 16px Barlow, sans-serif; padding: 13px 28px; border-radius: 2px; cursor: pointer;">Save settings</button>
+          <a href="#" style="color: #A3A6AA;">Discard</a>
+        </div>
+        <span class="mono" style="font-size: 13px; color: #A3A6AA;">Version 3 · saved 18 Oct 09:05:44 · applies from the next quote</span>
+      </div>
+    </aside>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
