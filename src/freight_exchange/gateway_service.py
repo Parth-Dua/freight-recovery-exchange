@@ -485,7 +485,8 @@ class GatewayService:
                 "payment": {"reference": reference, "amount": str(amount), "currency": "FET", "method": "fet_direct",
                             "recipient": ctx.gateway_wallet, "deadline_seconds": 300,
                             "description": "Hormuz Exchange gateway smoke test (testnet FET); books nothing.",
-                            "metadata": {"fet_network": "stable-testnet", "service": "gateway_smoke"}}}
+                            "metadata": {"fet_network": "stable-testnet", "provider_agent_wallet": ctx.gateway_wallet,
+                                         "service": "gateway_smoke"}}}
 
     async def notify_smoke(self, ctx: ChatContext) -> dict:
         key = f"smoke:{ctx.event_id}"

@@ -132,7 +132,8 @@ class FetBookingService:
                             "recipient": gateway_wallet, "deadline_seconds": seconds,
                             "description": (f"Hormuz Exchange booking-coordination service: {amount} testnet FET. "
                                             "Demo payment; no real freight is bought."),
-                            "metadata": {"fet_network": NETWORK, "service": "booking_coordination"}}}
+                            "metadata": {"fet_network": NETWORK, "provider_agent_wallet": gateway_wallet,
+                                         "service": "booking_coordination"}}}
 
     async def _resume(self, intent: dict, gateway_wallet: str) -> dict:
         if intent["status"] == "BOOKING_CONFIRMED":
