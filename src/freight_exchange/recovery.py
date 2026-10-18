@@ -300,6 +300,15 @@ class RecoveryStore(Repository):
                 "UPDATE bookings SET status = 'SUPERSEDED' WHERE booking_id = %s AND status = 'DISRUPTED'",
                 (old_booking_id,))
             await self._assignment(conn, recovery_id, old_booking_id, "RECOVERED", replacement_ids[0])
+            # The original no longer claims its slots; on a withdrawn sailing they can never be sold again.
+            slots = [r[0] for r in await (await conn.execute(
+                "UPDATE booking_slots SET status = 'RELEASED' WHERE booking_id = %s AND status = 'COMMITTED' "
+                "RETURNING slot_id", (old_booking_id,))).fetchall()]
+            if slots:
+                await conn.execute(
+                    """UPDATE capacity_slots c SET status = 'WITHDRAWN', version = version + 1
+                       FROM sailings s WHERE c.sailing_id = s.sailing_id AND s.status = 'WITHDRAWN'
+                         AND c.slot_id = ANY(%s) AND c.status = 'COMMITTED'""", (slots,))
             if changed.rowcount:  # resumed runs re-check; record the change only once
                 await _event(conn, "BOOKING_SUPERSEDED", "booking", old_booking_id, correlation_id=recovery_id,
                              payload={"replacement_booking_ids": replacement_ids})
