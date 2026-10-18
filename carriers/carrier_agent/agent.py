@@ -2,6 +2,7 @@
 
 REQUEST_OFFER -> signed PROPOSE_OFFER | REJECT_OFFER | AGENT_ERROR
 COUNTER_OFFER -> signed ACCEPT_COUNTER | REVISED_OFFER | REJECT_COUNTER | AGENT_ERROR
+REQUEST_RECOVERY_CAPACITY -> signed RECOVERY_CAPACITY_OFFERS | REJECT_OFFER | AGENT_ERROR (one-shot)
 
 Replies are sent with ctx.send(sender, ...) so the Exchange's sync request
 resolves with them. Only requests from the allowed Exchange address(es) are served.
@@ -31,9 +32,11 @@ from freight_contracts import (
     RequestHold,
     ErrorCode,
     ProposeOffer,
+    RecoveryCapacityOffers,
     RejectCounter,
     RejectOffer,
     RequestOffer,
+    RequestRecoveryCapacity,
     RevisedOffer,
     payload_digest,
 )
@@ -42,7 +45,9 @@ from uagents import Agent, Context, Protocol
 
 from carrier_agent import holds
 from carrier_agent.inventory import CarrierInventory, LoggedOffer
-from carrier_agent.policy import Decline, Policy, SailingInventory, decide, decide_counter
+from carrier_agent.policy import (
+    Decline, Policy, RecoveryQuote, SailingInventory, decide, decide_counter, decide_recovery,
+)
 
 log = logging.getLogger("carrier_agent")
 
@@ -115,6 +120,54 @@ def build_reply(
     }
 
 
+def build_recovery_reply(
+    msg: RequestRecoveryCapacity,
+    *,
+    sender: str,
+    carrier_id: str,
+    carrier_address: str,
+    allowed_requesters: set[str],
+    decide_fn: Callable,
+    now: datetime,
+) -> tuple[str, dict]:
+    """Return (kind, fields) for a REQUEST_RECOVERY_CAPACITY reply; pure so it can be unit-tested.
+    `decide_fn(items, now)` returns (list[RecoveryQuote], Policy) or a Decline."""
+    base = reply_base(msg, carrier_id=carrier_id, carrier_address=carrier_address, now=now)
+    err = envelope_precheck(msg, sender=sender, allowed_requesters=allowed_requesters, now=now)
+    if err:
+        return "error", {**base, **err}
+    if any(i.latest_arrival <= now for i in msg.request_items):
+        return "error", {**base, "error_code": ErrorCode.INVALID_CARGO_REQUEST,
+                         "detail": "a request item's latest_arrival is in the past"}
+
+    outcome = decide_fn(msg.request_items, now)
+    if isinstance(outcome, Decline):
+        return "reject", {**base, "reason_code": outcome.reason_code, "reason": outcome.reason}
+    quotes, policy = outcome
+    expires_at = now + timedelta(seconds=policy.offer_ttl_seconds)
+    return "offers", {**base, "recovery_run_id": msg.recovery_run_id, "offers": [
+        recovery_terms(q, policy=policy, carrier_id=carrier_id, expires_at=expires_at) for q in quotes]}
+
+
+def recovery_terms(q: RecoveryQuote, *, policy: Policy, carrier_id: str, expires_at: datetime) -> dict:
+    s = q.sailing
+    return {
+        "offer_id": f"rof_{carrier_id}_{uuid4().hex[:12]}",
+        "sailing_id": s.sailing_id,
+        "vessel_name": s.vessel_name,
+        "origin_port": s.origin_port,
+        "destination_port": s.destination_port,
+        "container_type": q.container_type,
+        "capacity_units": q.capacity_units,
+        "total_price_minor": q.total_price_minor,
+        "currency": policy.currency,
+        "departure_at": s.departure_at,
+        "arrival_at": s.arrival_at,
+        "expires_at": expires_at,
+        "eligible_booking_ids": list(q.eligible_booking_ids),
+    }
+
+
 def envelope_precheck(msg, *, sender: str, allowed_requesters: set[str], now: datetime) -> dict | None:
     """Authorization / schema / expiry checks shared by hold, release and confirm. Returns AGENT_ERROR fields."""
     if sender not in allowed_requesters:
@@ -143,6 +196,9 @@ def counter_precheck(
         return "error", {"error_code": ErrorCode.REQUEST_EXPIRED, "detail": "counter already expired"}
     if logged is None or (logged.negotiation_id, logged.request_id) != (msg.negotiation_id, msg.request_id):
         return "reject", {"reason_code": RejectReason.OFFER_NOT_FOUND, "reason": "no such offer from us in this negotiation"}
+    if logged.offer_kind == "recovery":
+        return "reject", {"reason_code": RejectReason.COUNTER_LIMIT_REACHED,
+                          "reason": "recovery offers are one-shot; they cannot be countered"}
     if logged.expires_at <= now:
         return "reject", {"reason_code": RejectReason.OFFER_EXPIRED, "reason": "that offer has expired; request a new quote"}
     if logged.round != 1 or logged.counters_used >= 1:
@@ -283,6 +339,42 @@ def build_carrier_agent(
         ctx.logger.info(json.dumps({
             "event": event, "carrier_id": carrier_id, "request_id": msg.request_id, "reply": reply.message_type,
             "code": getattr(reply, "code", None), "duration_ms": round((time.perf_counter() - started) * 1000, 1),
+        }))
+
+    recovery_models = {"offers": RecoveryCapacityOffers, "reject": RejectOffer, "error": AgentError}
+
+    @protocol.on_message(model=RequestRecoveryCapacity, replies={RecoveryCapacityOffers, RejectOffer, AgentError})
+    async def on_request_recovery(ctx: Context, sender: str, msg: RequestRecoveryCapacity) -> None:
+        started, now = time.perf_counter(), _now()
+        base = reply_base(msg, carrier_id=carrier_id, carrier_address=agent.address, now=now)
+        try:
+            policy = await inventory.policy()
+            sailings_by_type: dict[str, list[SailingInventory]] = {}
+            for origin, destination, ctype in sorted({(i.origin_port, i.destination_port, i.container_type)
+                                                      for i in msg.request_items}):
+                sailings_by_type.setdefault(ctype, []).extend(
+                    await inventory.sailings_on_lane(origin, destination, ctype))
+
+            def decide_fn(items, at):
+                result = decide_recovery(items, sailings_by_type, policy, at,
+                                         withdrawn_sailing_id=msg.withdrawn_sailing_id)
+                return result if isinstance(result, Decline) else (result, policy)
+
+            kind, fields = build_recovery_reply(
+                msg, sender=sender, carrier_id=carrier_id, carrier_address=agent.address,
+                allowed_requesters=allowed_requesters, decide_fn=decide_fn, now=now)
+            reply = recovery_models[kind](**fields)
+            if kind == "offers":
+                await inventory.log_recovery_offers(reply)
+        except Exception as exc:
+            log.exception("recovery offer failed")
+            reply = AgentError(**base, error_code=ErrorCode.INTERNAL_ERROR, detail=type(exc).__name__)
+        reply.signature = agent.sign_digest(payload_digest(reply))
+        await ctx.send(sender, reply)
+        ctx.logger.info(json.dumps({
+            "event": "request_recovery_handled", "carrier_id": carrier_id, "recovery_run_id": msg.recovery_run_id,
+            "reply": reply.message_type, "offers": len(getattr(reply, "offers", []) or []),
+            "duration_ms": round((time.perf_counter() - started) * 1000, 1),
         }))
 
     @protocol.on_message(model=RequestHold, replies={HoldConfirmed, HoldRejected, AgentError})
