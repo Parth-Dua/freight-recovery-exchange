@@ -250,3 +250,10 @@
 - Evidence (local TimescaleDB 2.30.2, migrations 001–003): disruption 6 unit + 2 live pass (withdraw → stranded read with correct fields → in pending queue → 003 columns written → second withdraw is a no-op). End-to-end dry run: real withdrawal of ATL-101 → stranded buyer_b (deadline 24 Oct 08:00) → real sellable capacity → solver in 41 ms → BK→BEA-201; claim check caught Beacon claiming 4 slots on BEA-201 vs 2 sellable; flagged for approval (+USD 75, D5 = 0). Only the carrier offers were stand-ins (ACP recovery round not built). Console via HTTP: review + confirm withdrew COV-302 and wrote risk_sim_0002 / SIM-ADV-2026-015 / key. Suites: root 117, console 20 (unit+live), allocation 27, seams 18, disruption 7 (+1 skipped after console tests used the sailings).
 - NEEDS-FROM-PARTH: root deps `freight-disruption` + `freight-allocation` when wiring recovery; recovery trigger can poll `pending_withdrawals()` and claim via `recovery_runs` (UNIQUE `withdrawal_event_id`). D5 still unstored, so recovery in the demo needs buyer approval.
 - Next (Tisya): async-message spike, then `ApprovalSeam`.
+
+### 2026-10-17 — [Parth] Main-branch status review
+- Done: refreshed origin; reviewed main history, merged runtime files, ownership, active Phase 06 spec and PRD booking/recovery scope. Main remains 5c65a3f (#13); Phase 06 ACP recovery implementation is on parth/phase6-recovery-offers, not main.
+- Tests / evidence: read-only review; no tests run. Existing live/unit evidence remains as recorded above.
+- Files: progress.md (this checkpoint only).
+- Blockers: full recovery execution/approval/results integration remains incomplete; Stripe decline-card human check remains pending.
+- Next: resume Phase 06 contract approval and live-evidence steps in the 19:30 checkpoint; no runtime changes made during this review.
