@@ -25,7 +25,8 @@ from freight_exchange.repository import Repository, _event
 FET_DECIMALS = 18  # 1 FET = 10**18 atestfet on the Fetch stable testnet
 SHIP_INTENT = re.compile(
     r"^(start|new shipment|ship cargo|book cargo)$|\b(ship|send|move|book)\b.{0,40}\b(cargo|containers?|freight|shipment)\b"
-    r"|\bi (have|need to ship) cargo\b|\b(freight|shipping|container) (quotes?|rates?)\b", re.IGNORECASE)
+    r"|\bi (have|need to ship) cargo\b|\b(freight|shipping|container) (quotes?|rates?)\b"
+    r"|\b(find|need|get|book|want)\b.{0,30}\b(shipping line|carrier|vessel|sailing|ocean freight)\b", re.IGNORECASE)
 MENTION = re.compile(r"@[\w.-]+")
 PAID = re.compile(r"(i\s*(have|'ve)\s+)?(just\s+)?(paid|payment\s+(done|made|complete|completed|sent)|done paying)[.!]*")
 
