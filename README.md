@@ -40,6 +40,8 @@ uv run pytest -q && (cd carriers && uv run pytest -q)
 uv run python scripts/quote_smoke.py               # real quote round + Tiger SELECT evidence
 uv run python scripts/acp_failure_smoke.py         # typed errors from live carriers
 uv run python scripts/negotiation_smoke.py         # Phase 3: counters, floor, one-counter limit, selection
+uv run python scripts/recovery_smoke.py ATL-101 [--withdraw] [--propose-only]   # Phases 6-7: one recovery run + Tiger evidence
+uv run python scripts/recovery_worker.py [--once]  # Phases 6-7: recover every withdrawal, finish waiting runs (beside the Exchange)
 ```
 In ASI:One: `@freight-recovery-exc Quote 2x20GP from Jebel Ali to Mumbai, arrive by Oct 23, budget $5,600, don't split`, then `@freight-recovery-exc select 1`. Every reply ends with `Ref: req_…`; for quotes it is also the Tiger `cargo_requests.request_id`. Negotiation settings: `NEGOTIATION_MODE=auto|off`, `NEGOTIATION_DISCOUNT_PCT=5`.
 

@@ -81,11 +81,11 @@ class AcpHoldClient:
 
     async def request_hold(self, carrier: CarrierRef, *, offer_id: str, request_id: str, buyer_id: str,
                            quantity: int, idempotency_key: str, ttl_seconds: int, negotiation_id: str = "",
-                           correlation_id: str = "") -> HoldResult:
+                           correlation_id: str = "", recovery_offer_id: str | None = None) -> HoldResult:
         msg = RequestHold(**self._envelope(request_id=request_id, negotiation_id=negotiation_id,
                                            correlation_id=correlation_id),
                           offer_id=offer_id, quantity=quantity, buyer_id=buyer_id, idempotency_key=idempotency_key,
-                          requested_ttl_seconds=ttl_seconds)
+                          requested_ttl_seconds=ttl_seconds, recovery_offer_id=recovery_offer_id)
         reply, code, detail, _ = await self._exchange(carrier, msg, (HoldConfirmed, HoldRejected))
         if reply is None:
             return HoldResult(False, code, detail)
@@ -106,11 +106,13 @@ class AcpHoldClient:
 
     async def confirm_booking(self, carrier: CarrierRef, *, hold_id: str, payment_reference: str,
                               idempotency_key: str, intent_id: str, claim_code_hash: str, request_id: str = "",
-                              negotiation_id: str = "", correlation_id: str = "") -> ConfirmResult:
+                              negotiation_id: str = "", correlation_id: str = "",
+                              replaces_booking_id: str | None = None) -> ConfirmResult:
         msg = ConfirmBooking(**self._envelope(request_id=request_id, negotiation_id=negotiation_id,
                                               correlation_id=correlation_id),
                              hold_id=hold_id, payment_reference=payment_reference, idempotency_key=idempotency_key,
-                             intent_id=intent_id, claim_code_hash=claim_code_hash)
+                             intent_id=intent_id, claim_code_hash=claim_code_hash,
+                             replaces_booking_id=replaces_booking_id)
         reply, code, detail, _ = await self._exchange(carrier, msg, (BookingConfirmed, BookingRejected))
         if reply is None:
             return ConfirmResult(False, code, detail)

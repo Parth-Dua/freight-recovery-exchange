@@ -390,7 +390,8 @@ def build_carrier_agent(
                 out = await holds.request_hold(
                     inventory.pool, carrier_id, offer_id=msg.offer_id, request_id=msg.request_id,
                     buyer_id=msg.buyer_id, quantity=msg.quantity, idempotency_key=msg.idempotency_key,
-                    ttl_seconds=min(msg.requested_ttl_seconds, policy.max_hold_seconds))
+                    ttl_seconds=min(msg.requested_ttl_seconds, policy.max_hold_seconds),
+                    recovery_offer_id=msg.recovery_offer_id, run_id=msg.negotiation_id)
                 reply = (HoldConfirmed(**base, hold_id=out.hold_id, offer_id=msg.offer_id, sailing_id=out.sailing_id,
                                        quantity=out.quantity, expires_at=out.expires_at, replay=out.replay)
                          if out.ok else
@@ -430,7 +431,8 @@ def build_carrier_agent(
                 out = await holds.confirm_booking(
                     inventory.pool, carrier_id, hold_id=msg.hold_id, payment_reference=msg.payment_reference,
                     idempotency_key=msg.idempotency_key, intent_id=msg.intent_id,
-                    claim_code_hash=msg.claim_code_hash, payment_terms=policy.payment_terms)
+                    claim_code_hash=msg.claim_code_hash, payment_terms=policy.payment_terms,
+                    replaces_booking_id=msg.replaces_booking_id)
                 reply = (BookingConfirmed(**base, booking_id=out.booking_id, hold_id=msg.hold_id,
                                           confirmed_at=out.confirmed_at, payment_terms=policy.payment_terms,
                                           replay=out.replay)

@@ -29,7 +29,7 @@ from freight_exchange.db.seed import load_fixture, resolve_anchor, seed, table_c
 # FK-safe order (children before parents).
 TRANSACTIONAL = [
     "chat_turns", "booking_intents", "payment_records", "booking_slots", "recovery_assignments",
-    "recovery_runs", "bookings", "hold_slots", "holds", "offer_selections", "carrier_offer_log",
+    "recovery_legs", "recovery_offers", "recovery_runs", "bookings", "hold_slots", "holds", "offer_selections", "carrier_offer_log",
     "agent_messages", "offers", "cargo_requests", "disruption_events", "market_events", "market_snapshots",
 ]
 
