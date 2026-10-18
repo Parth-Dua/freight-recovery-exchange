@@ -3,6 +3,7 @@
     start (dedupe + route) ─┬─ quote    : parse → clarify | quote round + one counter per carrier
                             ├─ requote  : re-run the session's latest request
                             ├─ select   : persist OFFER_SELECTED (not a hold, not a booking)
+                            ├─ book     : hold → Stripe TEST checkout | verify payment → confirm | cancel
                             ├─ status   : withdrawn sailings + buyer bookings from Tiger (spec 05 WP6)
                             ├─ info     : corridors / capabilities / not-yet-active replies
                             └───────────┴─→ finish (store turn for dedupe, log, reply)
@@ -29,7 +30,10 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, MessagesState, StateGraph
 
 from freight_exchange import responses as r
+from freight_exchange.booking import BookingService, claim_secret_from
 from freight_exchange.booking_status import TigerBookingSeam
+from freight_exchange.hold_client import AcpHoldClient
+from freight_exchange.payments import StripeTestPayments
 from freight_exchange.carrier_client import CarrierClient
 from freight_exchange.config import carrier_timeout_seconds
 from freight_exchange.observability import log_event, new_request_id
@@ -47,7 +51,16 @@ ERROR_REPLY = "Sorry, I couldn't handle that request. It is safe to retry."
 SERVICE_UNAVAILABLE_REPLY = "The quote service is temporarily unavailable. Nothing was booked; it is safe to retry."
 DUPLICATE_WINDOW_S = 120
 DUPLICATE_WAIT_S = 45
-DATA_ROUTES = {r.ROUTE_CORRIDORS, r.ROUTE_QUOTES, r.ROUTE_REQUOTE, r.ROUTE_SELECT, r.ROUTE_RECOVERY}
+DATA_ROUTES = {r.ROUTE_CORRIDORS, r.ROUTE_QUOTES, r.ROUTE_REQUOTE, r.ROUTE_SELECT, r.ROUTE_RECOVERY,
+               r.ROUTE_BOOKING, r.ROUTE_PAID, r.ROUTE_CANCEL}
+_BOOK_VERB = re.compile(r"\b(book|reserve)\b", re.IGNORECASE)
+_ALLOWANCE = re.compile(r"\b(?:auto[- ]?rebook|rebook|recover\w*|extra)\b\D{0,40}?\$\s?(\d[\d,]*)", re.IGNORECASE)
+
+
+def recovery_allowance_minor(text: str) -> int:
+    """Buyer's opt-in recovery envelope from the booking message (D5); default 0 = always ask."""
+    m = _ALLOWANCE.search(text)
+    return int(m.group(1).replace(",", "")) * 100 if m else 0
 _BARE_NUMBER = re.compile(r"^\s*#?\s*(\d{1,2})\s*$")
 
 
@@ -61,6 +74,16 @@ async def get_services() -> tuple[Repository, QuoteService]:
     repo = await get_repository()
     identity = exchange_identity(os.environ["AGENT_URI"])
     return repo, QuoteService(repo, CarrierClient(identity, timeout_s=carrier_timeout_seconds()))
+
+
+async def get_booking_service() -> BookingService:
+    """Real booking path (tests monkeypatch this): ACP holds + Stripe TEST checkout."""
+    repo = await get_repository()
+    key = os.environ["AGENT_URI"]
+    holds = AcpHoldClient(exchange_identity(key), audit=repo.record_acp_message)
+    from urllib.parse import urlparse
+
+    return BookingService(repo, holds, StripeTestPayments(), claim_secret_from(urlparse(key).password or ""))
 
 
 async def get_booking_seam() -> TigerBookingSeam:
@@ -203,10 +226,29 @@ async def select(state: ExchangeState, turn: dict) -> dict:
     if result["status"] in ("SELECTED", "ALREADY_SELECTED"):
         refreshed = next(o for o in await repo.presented_offers(latest["request_id"]) if o["offer_id"] == offer["offer_id"])
         turn["body"] = r.selected_reply(refreshed, latest["request_id"], already=result["status"] == "ALREADY_SELECTED")
+        if _BOOK_VERB.search(turn["text"]):  # "book option 2": select, then go straight to the hold
+            service = await get_booking_service()
+            step = await service.start(session_id=turn["session"], buyer_id=turn["buyer"],
+                                       max_additional_cost_minor=recovery_allowance_minor(turn["text"]))
+            turn["body"] = r.booking_reply(step)
     elif result["status"] == "OFFER_EXPIRED":
         turn["body"] = r.offer_expired_reply(offer["display_rank"])
     else:
         turn["body"] = r.selection_problem_reply("that offer is no longer selectable", offers)
+    return {}
+
+
+@_guarded
+async def book(state: ExchangeState, turn: dict) -> dict:
+    service = await get_booking_service()
+    if turn["route"] == r.ROUTE_PAID:
+        step = await service.check_payment(session_id=turn["session"])
+    elif turn["route"] == r.ROUTE_CANCEL:
+        step = await service.cancel(session_id=turn["session"])
+    else:
+        step = await service.start(session_id=turn["session"], buyer_id=turn["buyer"],
+                                   max_additional_cost_minor=recovery_allowance_minor(turn["text"]))
+    turn["body"] = r.booking_reply(step)
     return {}
 
 
@@ -252,16 +294,17 @@ async def finish(state: ExchangeState) -> dict:
 def _next(state: ExchangeState) -> str:
     route = state["turn"]["route"]
     return {"duplicate": "finish", r.ROUTE_QUOTES: "quote", r.ROUTE_REQUOTE: "requote",
-            r.ROUTE_SELECT: "select", r.ROUTE_RECOVERY: "status"}.get(route, "info")
+            r.ROUTE_SELECT: "select", r.ROUTE_RECOVERY: "status", r.ROUTE_BOOKING: "book", r.ROUTE_PAID: "book",
+            r.ROUTE_CANCEL: "book"}.get(route, "info")
 
 
 _builder = StateGraph(ExchangeState)
 for _name, _node in (("start", start), ("quote", quote), ("requote", requote), ("select", select),
-                     ("status", status), ("info", info), ("finish", finish)):
+                     ("book", book), ("status", status), ("info", info), ("finish", finish)):
     _builder.add_node(_name, _node)
 _builder.add_edge(START, "start")
-_builder.add_conditional_edges("start", _next, ["quote", "requote", "select", "status", "info", "finish"])
-for _name in ("quote", "requote", "select", "status", "info"):
+_builder.add_conditional_edges("start", _next, ["quote", "requote", "select", "book", "status", "info", "finish"])
+for _name in ("quote", "requote", "select", "book", "status", "info"):
     _builder.add_edge(_name, "finish")
 _builder.add_edge("finish", END)
 agent = _builder.compile()

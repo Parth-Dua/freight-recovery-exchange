@@ -79,17 +79,43 @@ class FakeQuotes:
         return QuoteRound(request_id, "flow_x", cargo, [], [])
 
 
+class FakeBookingService:
+    def __init__(self):
+        self.calls = []
+
+    async def start(self, **kw):
+        from freight_exchange.booking import BookingStep
+        self.calls.append(("start", kw))
+        return BookingStep("no_selection")
+
+    async def check_payment(self, **kw):
+        from freight_exchange.booking import BookingStep
+        self.calls.append(("check_payment", kw))
+        return BookingStep("no_intent")
+
+    async def cancel(self, **kw):
+        from freight_exchange.booking import BookingStep
+        self.calls.append(("cancel", kw))
+        return BookingStep("nothing_to_cancel")
+
+
 @pytest.fixture
 def svc(monkeypatch):
     import agent as module
 
     repo = FakeRepo()
     quotes = FakeQuotes(repo)
+    booking = FakeBookingService()
 
     async def fake_services():
         return repo, quotes
 
+    async def fake_booking():
+        return booking
+
     monkeypatch.setattr(module, "get_services", fake_services)
+    monkeypatch.setattr(module, "get_booking_service", fake_booking)
+    repo.booking = booking
     monkeypatch.setattr(module, "DUPLICATE_WAIT_S", 1)
     return repo, quotes
 
@@ -218,9 +244,22 @@ def test_duplicate_delivery_returns_the_original_reply(svc):
     assert second == first and len(svc[1].calls) == 1
 
 
-def test_booking_still_declined_without_touching_quotes(svc):
+def test_book_without_selection_asks_to_select_and_touches_nothing(svc):
     text = _invoke("Can you book two containers tomorrow?")["messages"][-1].content
-    assert "Booking is not active yet" in text and not svc[1].calls
+    assert "Select an offer first" in text and not svc[1].calls
+    assert svc[0].booking.calls[0][0] == "start"
+
+
+@pytest.mark.parametrize("message, call", [("I paid", "check_payment"), ("cancel", "cancel"), ("book it", "start")])
+def test_booking_routes_reach_the_booking_service(svc, message, call):
+    _invoke(message, agentverse_session="sb")
+    assert svc[0].booking.calls[-1][0] == call and svc[0].booking.calls[-1][1]["session_id"] == "sb"
+
+
+def test_recovery_allowance_is_opt_in():
+    import agent as module
+    assert module.recovery_allowance_minor("book it") == 0
+    assert module.recovery_allowance_minor("book it, auto-rebook up to $300 extra") == 30000
 
 
 def test_threaded_follow_up_only_returns_new_turn(svc):
@@ -229,7 +268,7 @@ def test_threaded_follow_up_only_returns_new_turn(svc):
     first = _invoke("What can you do?")
     second = asyncio.run(agent.ainvoke(
         {"messages": [*first["messages"], {"role": "human", "content": "Book a container"}]}))
-    assert "Booking is not active yet" in _sdk_text(second)
+    assert "Select an offer first" in _sdk_text(second)
 
 
 def test_logs_correlate_request_id_without_message_text(caplog, svc):
@@ -246,7 +285,7 @@ def test_logs_correlate_request_id_without_message_text(caplog, svc):
     handled = [r.getMessage() for r in caplog.records if "request_handled" in r.getMessage()]
     assert len(handled) == 1
     line = handled[0]
-    assert request_id in line and '"route": "booking_not_implemented"' in line and '"status": "ok"' in line
+    assert request_id in line and '"route": "book"' in line and '"status": "ok"' in line
     assert "duration_ms" in line and "agent1qexample" in line
     assert "test@example.com" not in line and "containers" not in line
 

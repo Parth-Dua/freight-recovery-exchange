@@ -34,9 +34,10 @@ def test_classify(message, route):
     assert r.classify(message) == route
 
 
-def test_booking_is_declined_without_inventing_a_booking():  # Phase 1 T03 still holds
-    text = r.static_reply(r.ROUTE_BOOKING).lower()
-    assert "not active" in text and "nothing has been booked" in text
+def test_booking_without_selection_invents_nothing():  # Phase 1 T03 spirit: never invent a booking
+    from freight_exchange.booking import BookingStep
+    text = r.booking_reply(BookingStep("no_selection")).lower()
+    assert "select an offer first" in text and "nothing was held or charged" in text
 
 
 @pytest.mark.parametrize("message", ["🚢" * 10_000, "\x00\x01", "x" * 100_000, '{"json": 1}'])

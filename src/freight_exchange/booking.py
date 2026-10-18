@@ -51,12 +51,15 @@ class HoldClient(Protocol):
     """Carrier-owned inventory actions (REQUEST_HOLD / RELEASE_HOLD / CONFIRM_BOOKING over ACP)."""
 
     async def request_hold(self, carrier: CarrierRef, *, offer_id: str, request_id: str, buyer_id: str,
-                           quantity: int, idempotency_key: str, ttl_seconds: int) -> HoldResult: ...
+                           quantity: int, idempotency_key: str, ttl_seconds: int, negotiation_id: str = "",
+                           correlation_id: str = "") -> HoldResult: ...
 
-    async def release_hold(self, carrier: CarrierRef, *, hold_id: str) -> HoldResult: ...
+    async def release_hold(self, carrier: CarrierRef, *, hold_id: str, request_id: str = "",
+                           negotiation_id: str = "", correlation_id: str = "") -> HoldResult: ...
 
     async def confirm_booking(self, carrier: CarrierRef, *, hold_id: str, payment_reference: str,
-                              idempotency_key: str, intent_id: str, claim_code_hash: str) -> ConfirmResult: ...
+                              idempotency_key: str, intent_id: str, claim_code_hash: str, request_id: str = "",
+                              negotiation_id: str = "", correlation_id: str = "") -> ConfirmResult: ...
 
 
 @dataclass
@@ -91,7 +94,7 @@ class BookingService:
         self.payments = payments
         self.claim_secret = claim_secret
 
-    async def start(self, *, session_id: str, buyer_id: str) -> BookingStep:
+    async def start(self, *, session_id: str, buyer_id: str, max_additional_cost_minor: int = 0) -> BookingStep:
         latest = await self.repo.latest_request(session_id)
         offer = await self.repo.selected_offer(latest["request_id"]) if latest else None
         if offer is None:
@@ -108,13 +111,14 @@ class BookingService:
         intent = await self.repo.create_intent(
             intent_id=intent_id, request_id=offer["request_id"], offer_id=offer["offer_id"], buyer_id=buyer_id,
             session_id=session_id, carrier_id=offer["carrier_id"], freight_minor=offer["total_price_minor"],
-            fee_minor=fee, currency=offer["currency"])
+            fee_minor=fee, currency=offer["currency"], max_additional_cost_minor=max_additional_cost_minor)
         if intent["intent_id"] != intent_id:  # a concurrent duplicate already created the live intent
             return await self._resume(intent)
 
         hold = await self.holds.request_hold(
             carrier, offer_id=offer["offer_id"], request_id=offer["request_id"], buyer_id=buyer_id,
-            quantity=offer["quantity"], idempotency_key=f"hold-{intent_id}", ttl_seconds=hold_ttl_seconds())
+            quantity=offer["quantity"], idempotency_key=f"hold-{intent_id}", ttl_seconds=hold_ttl_seconds(),
+            negotiation_id=offer["negotiation_id"], correlation_id=offer["correlation_id"])
         if not hold.ok:
             await self.repo.update_intent(intent_id, "HOLD_REJECTED", detail=f"{hold.code}: {hold.detail}")
             return BookingStep("hold_rejected", offer=offer, detail=f"{hold.code}: {hold.detail}")
@@ -170,7 +174,8 @@ class BookingService:
         confirm = await self.holds.confirm_booking(
             carrier, hold_id=intent["hold_id"], payment_reference=intent["payment_reference"],
             idempotency_key=f"confirm-{intent['intent_id']}", intent_id=intent["intent_id"],
-            claim_code_hash=claim_hash(intent["intent_id"], code))
+            claim_code_hash=claim_hash(intent["intent_id"], code), request_id=intent["request_id"],
+            negotiation_id=intent["negotiation_id"], correlation_id=intent["correlation_id"])
         if not confirm.ok:
             detail = (f"Stripe test payment verified, but {intent['display_name']} could not confirm capacity "
                       f"({confirm.code}). No second charge will be made; this booking needs reconciliation.")
@@ -196,7 +201,9 @@ class BookingService:
         if intent.get("hold_id"):
             carrier = CarrierRef(intent["carrier_id"], intent["display_name"], intent["agent_address"],
                                  intent["endpoint_url"])
-            await self.holds.release_hold(carrier, hold_id=intent["hold_id"])
+            await self.holds.release_hold(carrier, hold_id=intent["hold_id"], request_id=intent["request_id"],
+                                          negotiation_id=intent["negotiation_id"],
+                                          correlation_id=intent["correlation_id"])
 
 
 def claim_secret_from(agent_uri_key: str) -> bytes:

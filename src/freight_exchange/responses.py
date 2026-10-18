@@ -28,13 +28,15 @@ ROUTE_CORRIDORS = "get_supported_corridors"
 ROUTE_QUOTES = "request_quotes"
 ROUTE_SELECT = "select_offer"
 ROUTE_REQUOTE = "requote"
-ROUTE_BOOKING = "booking_not_implemented"
+ROUTE_BOOKING = "book"
+ROUTE_PAID = "check_payment"
+ROUTE_CANCEL = "cancel_booking"
 ROUTE_RECOVERY = "disruption_status"
 ROUTE_UNSUPPORTED = "unsupported"
 
 STATUS_LINE = (
-    "Demo market: fictional carriers and simulated inventory. Offers are indicative — "
-    "holds, booking, payment and recovery are not active yet."
+    "Demo market: fictional carriers and simulated inventory. Payments run in Stripe TEST mode only "
+    "(no real money). Automatic recovery is not active yet."
 )
 EXAMPLE_PROMPT = '"Quote 2x20GP from Jebel Ali to Mumbai, arrive by Oct 23, budget $5,600, don\'t split"'
 
@@ -42,10 +44,14 @@ EXAMPLE_PROMPT = '"Quote 2x20GP from Jebel Ali to Mumbai, arrive by Oct 23, budg
 # is never silently treated as a booking.
 _ROUTE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     (ROUTE_REQUOTE, re.compile(r"\b(re-?quote|refresh( the)? (quotes?|offers?)|new quotes?|quote again|fresh quotes?)\b")),
+    (ROUTE_PAID, re.compile(
+        r"\b(i(?: have|'ve)? (?:just )?paid|paid|payment (?:is )?(?:done|complete|completed|made|went through|sent)|"
+        r"check (?:my |the )?payment|did (?:my|the) payment|done paying|finished paying)\b")),
+    (ROUTE_CANCEL, re.compile(r"\b(cancel(?!l)|release (?:the |my )?hold|don'?t book|stop (?:the )?booking)\b")),
     (ROUTE_SELECT, SELECT_INTENT),
     # status questions beat booking words ("status of my booking")
     (ROUTE_RECOVERY, re.compile(
-        r"\b(recover\w*|re-?rout\w*|disrupt\w*|withdraw\w*|rebook\w*|cancel+ed sailing|my bookings?|"
+        r"\b(recover\w*|re-?rout\w*|disrupt\w*|withdraw\w*|rebook\w*|cancel+ed|my bookings?|"
         r"booking status|status of my|what happened to)\b")),
     (ROUTE_BOOKING, re.compile(r"\b(book\w*|reserv\w*|pay\w*|checkout|purchase|buy|hold|confirm\w*)\b")),
     # strong quote signals beat corridor words ("rates on the Mumbai lane")
@@ -94,11 +100,6 @@ def static_reply(route: str) -> str:
             "carrier's signed offer and record everything in Tiger.\n"
             f"Try: {EXAMPLE_PROMPT}\n"
             "Coming next: negotiation, booking with test-mode payment, and joint recovery when a sailing is withdrawn."
-        )
-    if route == ROUTE_BOOKING:
-        return (
-            "Booking is not active yet, so nothing has been booked, held or charged. "
-            f"I can get live carrier quotes now — try: {EXAMPLE_PROMPT}"
         )
     return (
         "That's outside what I can do right now. I can list my corridors or fetch live carrier quotes — "
@@ -307,3 +308,67 @@ def disruption_status_reply(withdrawals: list, bookings: list) -> str:
         lines.append("Automatic recovery is not active yet: disrupted bookings have **not** been rebooked, "
                      "and nothing has been charged or refunded.")
     return "\n".join(lines)
+
+
+# ---- Phase 4: booking replies ---------------------------------------------------------
+TEST_CARD = "4242 4242 4242 4242 (any future expiry, any CVC, any ZIP)"
+
+
+def _allowance(minor: int) -> str:
+    return (f"auto-rebook if the sailing is cancelled, up to {money(minor)} extra" if minor
+            else "if the sailing is cancelled, any replacement that costs more needs your approval")
+
+
+def booking_reply(step) -> str:
+    i, o = step.intent or {}, step.offer or {}
+    k = step.kind
+    if k == "no_selection":
+        return ("Select an offer first (e.g. **select 1** after a quote), then say **book**. Nothing was held or charged.\n"
+                f"No quotes yet? Try: {EXAMPLE_PROMPT}")
+    if k == "offer_expired":
+        return "Your selected offer has expired, so I can't hold it. Say **requote** for fresh offers. Nothing was charged."
+    if k == "hold_rejected":
+        return (f"{o.get('display_name', 'The carrier')} couldn't hold that capacity ({step.detail}). "
+                "Nothing was held or charged. Say **requote** for fresh offers.")
+    if k == "checkout":
+        return (
+            f"**Hold placed** — {i['display_name']} is holding {i['quantity']}× {i['container_type']} on sailing "
+            f"{i['sailing_id']} for you until **{i['hold_expires_at']:%H:%M} UTC**.\n"
+            f"Pay in **Stripe TEST mode** (no real money): {step.checkout_url}\n"
+            f"- Simulated ocean freight: {money(i['freight_minor'], i['currency'])}\n"
+            f"- Booking service fee: {money(i['fee_minor'], i['currency'])}\n"
+            f"- **Total: {money(i['freight_minor'] + i['fee_minor'], i['currency'])}**\n"
+            f"Use Stripe's test card {TEST_CARD}. When you've paid, say **paid** — I'll verify it with Stripe "
+            "before asking the carrier to confirm. Say **cancel** to release the hold."
+        )
+    if k == "pending":
+        link = f" Checkout: {step.checkout_url}" if step.checkout_url else ""
+        return (f"Stripe has **not** received a payment for this booking yet ({step.detail}).{link}\n"
+                "Nothing is booked until Stripe confirms the payment. Say **paid** again once you've completed checkout.")
+    if k == "failed":
+        return (f"The checkout ended without payment ({step.detail}). The hold was released and nothing is booked "
+                "or charged. Say **requote** to start again.")
+    if k in ("reconciliation", "booking_pending"):
+        return (f"⚠️ {step.detail or 'This booking needs manual reconciliation.'} It is **not** marked as booked, "
+                "and no second charge will be made.")
+    if k == "cancelled":
+        return "Cancelled: the hold was released and the checkout closed. Nothing was booked or charged."
+    if k == "nothing_to_cancel":
+        status = i.get("status")
+        return (f"There's no open checkout to cancel{f' (current status: {status})' if status else ''}. "
+                "Confirmed bookings can't be cancelled from chat in this demo.")
+    if k == "no_intent":
+        return "There's no booking in progress in this conversation. Select an offer and say **book** first."
+    if k == "confirmed":
+        return (
+            f"✅ **Booking {step.booking_id} confirmed** by {i['display_name']} — claim code **{step.claim_code}**\n"
+            f"- Sailing {i['sailing_id']} · {i['quantity']}× {i['container_type']} · "
+            f"{i['origin_port']} → {i['destination_port']} · departs {when(i['departure_at'])} → arrives "
+            f"{when(i['arrival_at'])} UTC\n"
+            f"- Paid in Stripe TEST mode: simulated freight {money(i['freight_minor'], i['currency'])} + booking fee "
+            f"{money(i['fee_minor'], i['currency'])} = **{money(i['freight_minor'] + i['fee_minor'], i['currency'])}**\n"
+            f"- Freight payment terms: {i.get('payment_terms') or 'per carrier terms'}\n"
+            f"- Recovery: {_allowance(i.get('max_additional_cost_minor') or 0)}\n"
+            "Keep the booking ID and claim code — ask “what happened to my booking?” any time."
+        )
+    return "Something unexpected happened with this booking; nothing new was charged."
