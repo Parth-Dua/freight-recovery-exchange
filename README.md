@@ -1,55 +1,115 @@
-# Part 1 Spec-Driven Development Pack
+# Freight Recovery Exchange (LA Hacks AI 2026)
 
-Place `AGENTS.md` and `progress.md` in repository root. Place the full PRD in `docs/PRD.md` and phase specs in `docs/specs/`.
+An agent-native ocean-freight exchange on Fetch.ai. A buyer books container space by chatting with
+**`@freight-recovery-exc`** in ASI:One; independent **carrier agents** quote, take one counteroffer, hold
+and confirm space over ACP; payment is a **Stripe TEST** checkout. When a carrier **withdraws a sailing**,
+the exchange asks every other carrier once for replacement space, decides **all** displaced bookings
+together with **OR-Tools**, holds and confirms the replacements, and tells each buyer what happened.
+Every message, hold, booking and event is recorded in **Tiger (TimescaleDB)**.
 
-Follow phases 01→08, gated by observable acceptance evidence. Phase 01 was preserved from the earlier Phase 1 specification. Docs describe requirements, **not completed implementation**.
+> **Demo market.** Carriers (Atlas, Beacon, Cove, Meridian, Dhow), vessels, sailings, prices and sailing
+> withdrawals are **fictional simulations**, labelled as such. Payments are Stripe **test mode** only:
+> no real money moves, and recovery never charges or refunds anything.
 
-**Latest payment choice:** Stripe test-only API and official test card; no actual-money transfers. Stripe test Checkout is not automatically equivalent to Fetch's Agent Payment Protocol bonus; verify separately. Any conflicting payment recommendation in the historical PRD is superseded.
+## How it fits together
 
-**Part 2 deferred:** real risk data, Sentry and the Market Command Center; schemas in Part 1 remain future-data-compatible.
-
----
-
-## Runbook (Phase 1 + Phase 2)
-
-**Layout**
-- `src/agent.py` — Exchange Agent graph (`langgraph.json` → `agent:agent`), registered on Agentverse as `@freight-recovery-exc`, mailbox mode.
-- `src/freight_exchange/` — routing/replies, request parser, `carrier_client` (uAgents sync transport + reply validation), `quotes` (quote round), `repository` (Tiger), `db/` (migrations + seed).
-- `packages/freight_contracts/` — shared versioned messages (`REQUEST_OFFER`, `PROPOSE_OFFER`, `REJECT_OFFER`, `AGENT_ERROR`) + carrier signing. Used by both runtimes.
-- `carriers/` — company Carrier Agents (uAgents 0.26.1), **separate uv project** (uagents needs protobuf 5; langgraph-api needs ≥6). See `docs/decisions/0002`.
-- `fixtures/demo_carriers.json` — fictional Atlas/Beacon/Cove, AEJEA→INBOM 20GP sailings.
-
-**Setup (once)**
-```bash
-cp .env.example .env            # fill AGENT_URI, TIGER_DATABASE_URL, PGPASSWORD (never commit)
-uv sync && (cd carriers && uv sync)
-uv run python scripts/init_carrier_identities.py   # creates carrier seeds in .env, prints addresses
-uv run python scripts/db.py migrate                # Tiger schema + hypertables (idempotent)
-uv run python scripts/db.py seed                   # fictional carriers/sailings (idempotent)
+```
+ASI:One buyer ──chat──▶ Exchange agent (LangGraph, Agentverse mailbox)  src/agent.py
+                            │  signed uAgents messages (ACP)               packages/freight_contracts
+                            ▼
+              Carrier agents ×5 (uAgents, own private policy)            carriers/
+                            │
+                            ▼
+                 Tiger: bookings, holds, offers, market_events hypertable  src/freight_exchange/db
+Carrier console (withdraw a sailing) ─▶ disruption ─▶ recovery worker ─▶ offers ─▶ OR-Tools ─▶ holds ─▶ confirm
+console/                    packages/freight_disruption  src/freight_exchange/recovery*.py  packages/freight_allocation
 ```
 
-**Run (two terminals)**
+Owners and folders: `OWNERSHIP.md`. Decisions: `docs/decisions/`. Phase specs: `docs/specs/`. Progress and
+evidence: `progress.md`.
+
+## Setup (once)
+
+Needs [uv](https://docs.astral.sh/uv/), Python 3.12, a Tiger/TimescaleDB database, an Agentverse
+external-LangGraph agent and a Stripe **test** secret key.
+
 ```bash
-./scripts/run_carriers.sh                          # all carriers in the fixture (Atlas 8101 … Dhow 8105)
-uv run langgraph-av dev --no-browser               # Exchange Agent (Agentverse mailbox)
+cp .env.example .env     # fill AGENT_URI, TIGER_DATABASE_URL, PGPASSWORD, EXCHANGE_AGENT_ADDRESS, STRIPE_TEST_SECRET
+uv sync && (cd carriers && uv sync) && (cd console && uv sync)
+uv run python scripts/init_carrier_identities.py   # fills the five CARRIER_*_SEED values, prints addresses
+uv run python scripts/db.py migrate                # schema + hypertables (idempotent)
+uv run python scripts/demo.py reset                # clean, freshly anchored demo market
 ```
 
-**Verify**
-```bash
-uv run pytest -q && (cd carriers && uv run pytest -q)
-uv run python scripts/quote_smoke.py               # real quote round + Tiger SELECT evidence
-uv run python scripts/acp_failure_smoke.py         # typed errors from live carriers
-uv run python scripts/negotiation_smoke.py         # Phase 3: counters, floor, one-counter limit, selection
-uv run python scripts/recovery_smoke.py ATL-101 [--withdraw] [--propose-only]   # Phases 6-7: one recovery run + Tiger evidence
-uv run python scripts/recovery_worker.py [--once]  # Phases 6-7: recover every withdrawal, finish waiting runs (beside the Exchange)
-```
-In ASI:One: `@freight-recovery-exc Quote 2x20GP from Jebel Ali to Mumbai, arrive by Oct 23, budget $5,600, don't split`, then `@freight-recovery-exc select 1`. Every reply ends with `Ref: req_…`; for quotes it is also the Tiger `cargo_requests.request_id`. Negotiation settings: `NEGOTIATION_MODE=auto|off`, `NEGOTIATION_DISCOUNT_PCT=5`.
+## Demo runbook (about 5 minutes)
 
-**Gotchas**
-- `AGENT_URI` contains the agent's private key. Treat it, `CARRIER_*_SEED` and `PGPASSWORD` as secrets.
-- Only one machine should run the Exchange with a given `AGENT_URI` (they would share one mailbox).
-- Carriers must run on the same machine as the Exchange (localhost endpoints, resolved via Almanac).
-- Set `?log=INFO` at the end of `AGENT_URI` to see Agentverse SDK logs (silent by default).
-- This repo lives in an iCloud-synced folder on one machine; macOS re-hides `.pth` files there and Python skips hidden `.pth` files, so `freight-contracts` is installed **non-editable**. After editing contracts: `uv sync --reinstall-package freight-contracts` (and in `carriers/`).
-- Sailing dates are relative to `anchor_date` in the fixture; re-anchor with `uv run python scripts/db.py seed --anchor 2026-10-25T00:00:00Z`.
-- Tunnel fallback: `AGENTVERSE_MAILBOX=false TUNNEL_TRANSPORT_PROTOCOL=http2 uv run langgraph-av dev --tunnel --no-browser`.
+1. **Reset and seed:** `uv run python scripts/demo.py reset && uv run python scripts/demo.py seed`.
+   Seed books Buyer B (1×20GP) on ATL-101 and an unrelated Buyer C elsewhere, and prints the exact
+   prompt for step 3 (its arrival date follows the market's anchor).
+2. **Start everything:** `./scripts/run_demo.sh` (carriers, Exchange, recovery worker, console). Wait for
+   `Registered with agentverse` in `logs/exchange.log`.
+3. **Quote (ASI:One):** paste the printed prompt, e.g.
+   `@freight-recovery-exc Quote 2x20GP from Jebel Ali to Mumbai, arrive by Oct 23, budget $5,600, don't split`.
+   You see signed offers from the carriers, one counter each, and the declines.
+4. **Book:** `select atlas`, then `book it, auto-rebook up to $600 extra`. Open the Stripe TEST link, pay
+   with card `4242 4242 4242 4242` (any future expiry, any CVC), return and send `paid`. You get a booking
+   ID and claim code.
+5. **Disrupt:** open http://localhost:8800 and withdraw **ATL-101** (simulated advisory), confirm.
+6. **Recover:** within about a minute ASI:One shows your sailing was cancelled, then that you were rebooked
+   (Beacon BEA-201) once the carrier confirmed. `@freight-recovery-exc my bookings` shows "replaced by BK-…".
+   Without an allowance (`book it`), you are asked instead: reply `approve BK-…` or `decline BK-…`.
+7. **Prove it:** `uv run python scripts/demo.py audit` (invariants) and `uv run python scripts/demo.py evidence`
+   (ACP traffic, Stripe test verification, bookings and lineage, solver fingerprint, holds, hypertable).
+
+Unattended rehearsal of steps 1, 5, 6 and 7 with a preseeded stand-in for Buyer A:
+`uv run python scripts/demo.py rehearse --runs 3`.
+
+## Verify
+
+```bash
+uv run pytest -q && (cd carriers && uv run pytest -q)          # carrier live tests need TIGER_DATABASE_URL
+for p in packages/freight_seams packages/freight_disruption packages/freight_allocation console; do (cd $p && uv run pytest -q); done
+uv run python scripts/quote_smoke.py          # live quote round + Tiger rows
+uv run python scripts/acp_failure_smoke.py    # typed errors: unauthorized, expired, malformed, unreachable
+uv run python scripts/negotiation_smoke.py    # one counter per offer, private floor, idempotent selection
+uv run python scripts/recovery_smoke.py ATL-101 [--withdraw] [--propose-only]   # one recovery run + evidence
+uv run python scripts/demo.py audit           # transaction invariants on the live database
+```
+
+The console and disruption live tests withdraw sailings, so they run only against a local database
+(`cd console && uv run python scripts/dev_db.py up`).
+
+## Status against the hackathon requirements
+
+| Item | Status | Evidence |
+|---|---|---|
+| Agent registered on Agentverse, reachable from ASI:One (`@freight-recovery-exc`, mailbox) | Verified | `progress.md` Phase 1–4 checkpoints (ASI:One request IDs) |
+| Multi-agent interaction over ACP: 5 carrier uAgents, signed and verified replies | Verified | `quote_smoke`, recovery runs (`agent_messages`) |
+| End-to-end ASI:One booking with Stripe **test** checkout | Verified | BK-28C01D37 (Phase 4); decline-card case needs a human run |
+| Disruption → joint OR-Tools recovery → confirmed replacement bookings | Verified (preseeded buyers) | `rec_649c34bc7ace`, 3/3 rehearsals |
+| Buyer approval for pricier replacements | Verified (handler level) | `rec_4b2d9d5fb9a6`; the ASI:One message itself needs a human run |
+| Recovery messages appearing in the buyer's ASI:One chat | Not yet verified | needs a live ASI:One Buyer A (runbook step 6) |
+| ASI:One discovery without the @handle | Not verified | to try: ask ASI:One for an ocean-freight booking agent |
+| Tiger time-series (hypertable `market_events`) as runtime proof | Verified | `demo.py evidence` |
+| Fetch Agent Payment Protocol (bonus) | **Not claimed** | Stripe test checkout only; see `docs/decisions/0006` |
+| ASI:One Interactive Cards (bonus) | Not implemented | text replies (agreed fallback in `CardSeam`) |
+
+## Limitations
+
+- Simulated market and simulated withdrawals only; no real vessel schedules, advisories or shipments.
+- Recovery confirms freight in the simulated ledger; no payment difference is charged or refunded.
+- Multi-carrier recovery is not atomic: each hold and confirmation is idempotent and recorded per leg;
+  an unanswered confirmation leaves the run `RECONCILIATION_REQUIRED` until the worker retries it.
+- The recovery worker signs as the Exchange but never reads its mailbox; run it on the same machine.
+
+## Gotchas
+
+- `AGENT_URI` contains the agent's private key. Treat it, `CARRIER_*_SEED`, `PGPASSWORD` and Stripe keys as
+  secrets; never commit `.env`. Check a secret is set by its length, not its value.
+- Only one machine may run the Exchange (or `run_demo.sh`) with a given `AGENT_URI`: mailbox mode delivers
+  each message once.
+- Carriers run on the same machine as the Exchange (localhost endpoints, resolved via the Almanac).
+- `freight-contracts` is installed non-editable. After editing it: `uv sync --reinstall-package freight-contracts`
+  (also in `carriers/`), then restart the carriers **and** the Exchange: message schema digests must match.
+- Sailing dates are relative to the fixture anchor; `demo.py reset` re-anchors to tomorrow 00:00 UTC.
+- Add `?log=INFO` to `AGENT_URI` to see Agentverse SDK logs.
