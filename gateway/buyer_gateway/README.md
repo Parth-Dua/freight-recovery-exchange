@@ -1,14 +1,14 @@
 # Hormuz Exchange — Ocean Freight & Container Shipping Booking Agent
 
-![tag:innovationlab](https://img.shields.io/badge/innovationlab-3D8BD3)
-![tag:hackathon](https://img.shields.io/badge/hackathon-5F43F1)
-![domain:logistics](https://img.shields.io/badge/logistics-freight-0A7E8C)
-
 Book container shipping by chat. Tell this agent what cargo you need to ship and where; it gets **freight quotes
 from independent ocean carriers**, **negotiates the shipping rate for you**, books the sailing, takes **card
 payment**, and **automatically rebooks your cargo if a carrier cancels the sailing** (for example after a Strait of
 Hormuz security incident). Built for shippers, importers, exporters and freight forwarders moving 20ft containers
 between the Gulf (Dubai / Jebel Ali, Dammam, Sohar) and India / Pakistan (Mumbai, Mundra, Karachi).
+
+![tag:innovationlab](https://img.shields.io/badge/innovationlab-3D8BD3)
+![tag:hackathon](https://img.shields.io/badge/hackathon-5F43F1)
+![domain:logistics](https://img.shields.io/badge/logistics-freight-0A7E8C)
 
 ## Key features
 
