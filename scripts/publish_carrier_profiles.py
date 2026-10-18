@@ -56,6 +56,9 @@ def profile(carrier: dict) -> tuple[str, str]:
                    f"under {name}'s own private policy ({goal.lower()}).")
     readme = f"""# {name} · Carrier Agent
 
+![tag:innovationlab](https://img.shields.io/badge/innovationlab-3D8BD3)
+![tag:hackathon](https://img.shields.io/badge/hackathon-5F43F1)
+
 {name} is one of five independent ocean carriers on **Parley**, an agent-native freight exchange built for
 LA Hacks AI 2026. This agent sells {name}'s container space: it quotes, answers counter-offers and holds
 slots, all under a pricing policy only {name} can see.
