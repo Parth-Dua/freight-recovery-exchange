@@ -146,3 +146,10 @@
 - Not evidence of: Tiger, ACP or ASI:One. All unit tests. AT-06-06 is Parth's side.
 - Open for Parth: D4 (stage 1 counts bookings, not containers: Beacon alone saves B over A on cost); D5 still unstored (defaults to 0); root project needs `freight-allocation` (with ortools) only when phase 7 calls the real seam.
 - Next (Tisya): own Tiger DB → run the live reader test and console live tests; `TigerDisruptionSeam`; then cards.
+
+### 2026-10-17 — [Tisya] Own dev database + Phase 05 live evidence (branch tisya/dev-db)
+- Local TimescaleDB 2.30.2 in Docker (`freight-tiger-dev`, 127.0.0.1:5433), same version as Parth's Tiger Cloud. `.env` local URL + generated password + generated carrier seeds (none printed). `console/scripts/dev_db.py up|reset` creates or wipes, migrates, seeds, preseeds B and C; refuses any non-local URL.
+- Evidence: migrate → 001_core, 002_negotiation_selection; seed → ports 2, carriers 3, sailings 6, slots 18. Console `uv run pytest -q` with DB → **17 passed** (13 unit + 4 live: unknown sailing rejected, cross-carrier rejected (AT-05-04), idempotent withdrawal (AT-05-03), other sailings untouched (AT-05-02)). Withdrawal of ATL-101 and BEA-202 disrupted exactly the bookings on them; events SAILING_WITHDRAWN ×2, BOOKING_DISRUPTED ×2. Allocation live reader (branch tisya/allocation-solver): 1 passed; read BEA-201=2, COV-301=1.
+- Fixed: console live tests errored at teardown ("Event loop is closed"): module-scoped pool cleanup across per-test event loops. Now per test.
+- NEEDS-FROM-PARTH: `scripts/init_carrier_identities.py` treats keys present-but-empty (as copied from `.env.example`) as set, so all three carriers get the same identity from an empty seed and `db.py seed` then fails. Suggest treating an empty value as missing. Worked around in `dev_db.py`.
+- Not covered: migrations 003/004 (Parth's open branches) not applied here yet; rerun `dev_db.py up` after they merge.

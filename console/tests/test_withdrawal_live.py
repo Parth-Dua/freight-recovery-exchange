@@ -41,8 +41,10 @@ def _command(sailing_id: str, carrier_id: str) -> WithdrawSailing:
     )
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(autouse=True)
 async def _cleanup():
+    """Close this test's pool inside this test's event loop. pytest-asyncio gives each
+    test its own loop, so closing them all at module teardown hit already-closed loops."""
     yield
     await close_pools()
 

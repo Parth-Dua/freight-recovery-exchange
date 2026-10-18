@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from html import escape
+from urllib.parse import urlencode
 from uuid import uuid4
 
 from fastapi import FastAPI, Form
@@ -18,8 +19,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from carrier_console.config import console_port, load_env
 from carrier_console.db import close_pools, get_pool
-from carrier_console.queries import SailingRow, list_sailings, recent_disruptions
-from carrier_console.risk import get_risk_event, load_risk_events
+from carrier_console.queries import SailingRow, committed_bookings, list_sailings, recent_disruptions
+from carrier_console.risk import RiskEvent, get_risk_event, load_risk_events
 from carrier_console.withdrawal import WithdrawSailing, WithdrawalRejected, withdraw_sailing
 
 STYLE = """
@@ -69,6 +70,15 @@ button:hover { filter: brightness(1.1); }
 .log { font: 12px ui-monospace, Menlo, monospace; color: var(--muted);
        border-left: 2px solid var(--line); padding-left: 12px; margin-bottom: 8px; }
 .note { color: var(--muted); font-size: 12px; margin-top: 24px; line-height: 1.6; }
+.review h2 { margin-top: 0; }
+.review .title { font-size: 20px; font-weight: 600; margin: 0 0 6px; }
+.review .advisory { border-left: 2px solid var(--warn); padding: 4px 0 4px 12px; margin: 16px 0; }
+.review ul { margin: 8px 0 0; padding-left: 18px; }
+.review li { margin: 4px 0; }
+.actions { display: flex; gap: 12px; align-items: center; margin-top: 20px; }
+a.ghost { color: var(--muted); text-decoration: none; padding: 8px 14px;
+          border: 1px solid var(--line); border-radius: 7px; }
+a.ghost:hover { color: var(--ink); border-color: var(--muted); }
 """
 
 
@@ -86,9 +96,7 @@ def _sailing_card(sailing: SailingRow) -> str:
     form = ""
     if sailing.is_active:
         form = f"""
-        <form class="withdraw" method="post" action="/withdraw"
-              onsubmit="return confirm('Withdraw {escape(sailing.sailing_id)}? '
-                     + 'This disrupts {sailing.committed_bookings} committed booking(s).');">
+        <form class="withdraw" method="post" action="/withdraw/review">
           <input type="hidden" name="sailing_id" value="{escape(sailing.sailing_id)}">
           <input type="hidden" name="carrier_id" value="{escape(sailing.carrier_id)}">
           <select name="risk_event_id" required>{options}</select>
@@ -112,6 +120,59 @@ def _sailing_card(sailing: SailingRow) -> str:
         </div>
       </div>{form}
     </div>"""
+
+
+def _review_body(sailing: SailingRow, risk_event: RiskEvent, bookings: list[tuple[str, str]]) -> str:
+    """The confirmation step. Plain HTML on purpose: no browser popup, so it works in any
+    browser, including embedded ones that block confirm() dialogs."""
+    if bookings:
+        affected = (
+            f"<p>This will disrupt <b>{len(bookings)}</b> committed booking(s):</p><ul>"
+            + "".join(f"<li><span class=\"id\">{escape(bid)}</span> · {escape(buyer)}</li>"
+                      for bid, buyer in bookings)
+            + "</ul>"
+        )
+    else:
+        affected = "<p>No committed bookings are on this sailing, so nobody is disrupted.</p>"
+    return f"""
+  <div class="card review">
+    <p class="title">Withdraw {escape(sailing.sailing_id)}?</p>
+    <div class="meta">{escape(sailing.carrier_name)} · {escape(sailing.origin_port)} &rarr;
+      {escape(sailing.destination_port)} · departs {sailing.departure_at:%d %b %H:%M}</div>
+    <div class="advisory">
+      <div class="meta">{escape(risk_event.label)} · {escape(risk_event.source_reference)} (simulated)</div>
+      <div>{escape(risk_event.description)}</div>
+    </div>
+    {affected}
+    <p class="meta">Bookings on other sailings are not affected. Withdrawing twice changes nothing.</p>
+    <form method="post" action="/withdraw" class="actions">
+      <input type="hidden" name="sailing_id" value="{escape(sailing.sailing_id)}">
+      <input type="hidden" name="carrier_id" value="{escape(sailing.carrier_id)}">
+      <input type="hidden" name="risk_event_id" value="{escape(risk_event.risk_event_id)}">
+      <button type="submit">Yes, withdraw {escape(sailing.sailing_id)}</button>
+      <a class="ghost" href="/">Cancel</a>
+    </form>
+  </div>"""
+
+
+def _shell(body: str) -> str:
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Carrier Console</title><style>{STYLE}</style></head>
+<body><div class="wrap">
+  <header>
+    <h1>Carrier Console</h1>
+    <p class="sub">Operator view. Withdraw a sailing when an advisory makes it unsafe to run.</p>
+  </header>
+  {body}
+</div></body></html>"""
+
+
+def _back(**params: str) -> RedirectResponse:
+    """Back to the console with a banner. Values are URL-encoded, so messages with spaces
+    and colons survive the redirect."""
+    return RedirectResponse("/?" + urlencode(params), status_code=303)
 
 
 def _banner(params: dict[str, str]) -> str:
@@ -162,15 +223,7 @@ async def index(ok: str = "", dup: str = "", err: str = "") -> HTMLResponse:
         for row in history
     ) or '<div class="log">No disruptions recorded yet.</div>'
 
-    return HTMLResponse(f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Carrier Console</title><style>{STYLE}</style></head>
-<body><div class="wrap">
-  <header>
-    <h1>Carrier Console</h1>
-    <p class="sub">Operator view. Withdraw a sailing when an advisory makes it unsafe to run.</p>
-  </header>
+    return HTMLResponse(_shell(f"""
   {_banner({"ok": ok, "dup": dup, "err": err})}
   <h2>Sailings</h2>
   {cards}
@@ -180,8 +233,25 @@ async def index(ok: str = "", dup: str = "", err: str = "") -> HTMLResponse:
     All advisories here are explicitly simulated fixtures. An advisory never withdraws a
     sailing on its own: a carrier operator has to authorize each withdrawal, which is what
     this page records. Withdrawing twice is a no-op.
-  </p>
-</div></body></html>""")
+  </p>"""))
+
+
+@app.post("/withdraw/review", response_class=HTMLResponse, response_model=None)
+async def review(
+    sailing_id: str = Form(...),
+    carrier_id: str = Form(...),
+    risk_event_id: str = Form(...),
+) -> HTMLResponse | RedirectResponse:
+    pool = await get_pool()
+    risk_event = get_risk_event(risk_event_id)
+    sailing = next((s for s in await list_sailings(pool) if s.sailing_id == sailing_id), None)
+    if risk_event is None or sailing is None:
+        return _back(err=f"unknown sailing or advisory: {sailing_id}, {risk_event_id}")
+    if sailing.carrier_id != carrier_id:
+        return _back(err=f"CROSS_CARRIER_WITHDRAWAL: {carrier_id} does not own {sailing_id}")
+    if not sailing.is_active:
+        return _back(dup=sailing_id)
+    return HTMLResponse(_shell(_review_body(sailing, risk_event, await committed_bookings(pool, sailing_id))))
 
 
 @app.post("/withdraw")
@@ -193,7 +263,7 @@ async def withdraw(
     pool = await get_pool()
     risk_event = get_risk_event(risk_event_id)
     if risk_event is None:
-        return RedirectResponse(f"/?err=unknown+risk+event+{risk_event_id}", status_code=303)
+        return _back(err=f"unknown risk event {risk_event_id}")
 
     command = WithdrawSailing(
         sailing_id=sailing_id,
@@ -207,10 +277,10 @@ async def withdraw(
     try:
         result = await withdraw_sailing(pool, command)
     except WithdrawalRejected as rejection:
-        return RedirectResponse(f"/?err={rejection.code.value}: {rejection.detail}", status_code=303)
+        return _back(err=f"{rejection.code.value}: {rejection.detail}")
 
     if result.already_withdrawn:
-        return RedirectResponse(f"/?dup={result.sailing_id}", status_code=303)
+        return _back(dup=result.sailing_id)
 
     message = (
         f"{result.sailing_id} withdrawn as {result.event_id}. "
@@ -219,7 +289,7 @@ async def withdraw(
         f"{result.withdrawn_slot_count} sellable slot(s) withdrawn. "
         f"{result.untouched_booking_count} committed booking(s) elsewhere untouched."
     )
-    return RedirectResponse(f"/?ok={message}", status_code=303)
+    return _back(ok=message)
 
 
 def main() -> None:
