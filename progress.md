@@ -139,6 +139,12 @@
 - Blocked: (1) Tisya's OK for additive contract messages (REQUEST_HOLD, HOLD_CONFIRMED, HOLD_REJECTED, RELEASE_HOLD, HOLD_RELEASED, CONFIRM_BOOKING, BOOKING_CONFIRMED, BOOKING_REJECTED); (2) `STRIPE_SECRET_KEY=sk_test_…` in .env for live Stripe evidence.
 - Next once unblocked: contracts → carrier handlers → Exchange booking_intents repo + graph `book`/`paid`/`cancel` nodes → live Stripe test card 4242 / failure card → ASI:One receipt (AT-04-03/05/06).
 
+### 2026-10-17 17:20 — [Parth] Phase 04 live Stripe adapter evidence
+- Keys present as `STRIPE_TEST_SECRET` (sk_test_, len 107) and `STRIPE_TEST_PUBLISHABLE` (pk_test_, len 107); adapter now reads `STRIPE_TEST_SECRET` (fallback `STRIPE_SECRET_KEY`).
+- `scripts/stripe_smoke.py` (live Stripe TEST, no card): session created on checkout.stripe.com, amount_total 530500 (528000 freight + 2500 fee); repeat create with same intent → same session (idempotency key); verify before payment → PAYMENT_PENDING; wrong expected amount → PAYMENT_RECONCILIATION_REQUIRED; after expire → PAYMENT_FAILED (expired/unpaid, livemode=False).
+- User decision: Payment Protocol is required but deferred; hosted Checkout link for Phase 4 (decision 0006 updated).
+- Still blocked: Tisya's OK for additive contract messages (hold/confirm). Building Exchange-side intents/graph against a HoldClient interface meanwhile.
+
 ## Checkpoint template (append concise updates)
 ### YYYY-MM-DD HH:MM — Phase NN
 - Done:

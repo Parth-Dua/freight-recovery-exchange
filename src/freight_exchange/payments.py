@@ -81,10 +81,11 @@ def classify_session(session: Any, expected: Expected) -> Verification:
 
 class StripeTestPayments:
     def __init__(self, secret_key: str | None = None, client: Any = None):
-        key = secret_key if secret_key is not None else os.getenv("STRIPE_SECRET_KEY", "")
+        key = secret_key if secret_key is not None else (
+            os.getenv("STRIPE_TEST_SECRET") or os.getenv("STRIPE_SECRET_KEY", ""))
         if client is None:
             if not key.startswith("sk_test_"):
-                raise PaymentConfigError("STRIPE_SECRET_KEY must be a Stripe TEST key (sk_test_…); refusing to run")
+                raise PaymentConfigError("STRIPE_TEST_SECRET must be a Stripe TEST key (sk_test_…); refusing to run")
             import stripe
 
             client = stripe.StripeClient(key, http_client=stripe.HTTPXClient())
