@@ -678,6 +678,14 @@ def real_approval_seam(pool: AsyncConnectionPool) -> ApprovalSeam | None:
     return TigerApprovalSeam(TigerApprovalStore(pool))
 
 
+def _notifier(pool: AsyncConnectionPool, agent_uri: str | None):
+    """Gateway cards for buyers who chat through the gateway; legacy text for older chats."""
+    if not agent_uri:
+        return None
+    from freight_exchange.gateway_notify import GatewayRecoveryNotifier
+    return GatewayRecoveryNotifier(pool, legacy=AsiRecoveryNotifier(pool, agent_uri))
+
+
 async def build_recovery_seam(identity, pool: AsyncConnectionPool, *, agent_uri: str | None = None,
                               commit: bool = True) -> AcpRecoverySeam:
     """Production wiring: Tisya's Tiger-backed DisruptionSeam, OR-Tools AllocationSeam and ApprovalSeam,
@@ -699,5 +707,5 @@ async def build_recovery_seam(identity, pool: AsyncConnectionPool, *, agent_uri:
         allocation=SolverAllocationSeam(TigerCapacityReader(pool)),
         holds=AcpHoldClient(identity, audit=audit) if commit else None,
         approval=real_approval_seam(pool),
-        notifier=AsiRecoveryNotifier(pool, agent_uri) if agent_uri else None,
+        notifier=_notifier(pool, agent_uri),
     )

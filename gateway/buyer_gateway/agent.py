@@ -28,6 +28,7 @@ from uagents_core.contrib.protocols.payment import (
 
 from buyer_gateway.backend_client import BackendClient, BackendUnavailable
 from buyer_gateway.card_wire import CardWireError, message_for, text_message
+from buyer_gateway.payment_verifier import verify_payment
 
 log = logging.getLogger("buyer_gateway")
 README = Path(__file__).resolve().parent / "README.md"
@@ -108,7 +109,16 @@ def build_gateway(*, seed: str, port: int, backend: BackendClient, name: str = "
                     "gateway_agent_address": agent.address, "gateway_wallet": str(agent.wallet.address()), **fields}
         try:
             verdict = await backend.payment_event(envelope)
+            if verdict.get("action") == "verify":  # the backend accepted the claim; now prove it on-chain
+                proof = await verify_payment(verdict["expected"])
+                log.info("ledger verification %s: %s", verdict["expected"]["reference"], proof.detail)
+                verdict = await backend.payment_event({**envelope, "type": "ledger_result",
+                                                       "reference": verdict["expected"]["reference"],
+                                                       "transaction_id": verdict["transaction_id"],
+                                                       "verified": proof.verified, "detail": proof.detail,
+                                                       "proof": proof.proof})
         except BackendUnavailable:
+            # Unknown outcome: never complete; the payment record stays for reconciliation on retry.
             verdict = {"action": "none", "followups": [{"kind": "TEXT", "text": UNAVAILABLE}]}
         session = verdict.get("chat_session_id") or str(ctx.session)
         if verdict.get("action") == "complete":
