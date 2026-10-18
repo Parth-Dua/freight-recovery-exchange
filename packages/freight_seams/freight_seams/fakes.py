@@ -15,7 +15,9 @@ from freight_seams.types import (
     BookingStatusView,
     DisruptedBooking,
     RecoveryAssignment,
+    RecoveryOffer,
     RecoveryOutcome,
+    RecoveryProposal,
     WithdrawalSummary,
 )
 
@@ -204,3 +206,108 @@ class FakeCardSeam:
         if not cleaned:
             return None
         return CardAction(action="submit", values={"text": cleaned}, raw_text=cleaned)
+
+
+def demo_recovery_offers() -> list[RecoveryOffer]:
+    """Replacement space for the spec 06 WP5 fixture: Beacon 2 slots, Cove 1 slot."""
+    expires = datetime(2026, 10, 18, 12, 0, tzinfo=timezone.utc)
+    return [
+        RecoveryOffer(
+            offer_id="ROF-BEA-201",
+            carrier_id="beacon",
+            sailing_id="BEA-201",
+            capacity_units=2,
+            total_price_minor=540_000,
+            currency="USD",
+            arrival_at=datetime(2026, 10, 22, 20, 0, tzinfo=timezone.utc),
+            expires_at=expires,
+        ),
+        RecoveryOffer(
+            offer_id="ROF-COV-301",
+            carrier_id="cove",
+            sailing_id="COV-301",
+            capacity_units=1,
+            total_price_minor=270_000,
+            currency="USD",
+            arrival_at=datetime(2026, 10, 23, 18, 0, tzinfo=timezone.utc),
+            expires_at=expires,
+        ),
+    ]
+
+
+class FakeAllocationSeam:
+    """Stands in for Tisya's allocation until the OR-Tools model lands.
+
+    NOT the solver. It is a largest-booking-first greedy pass that trusts every claimed
+    capacity. It happens to get the demo fixture right (A to Beacon, B to Cove) but it
+    will fail cases the real model must pass, so never use it as evidence of anything.
+    """
+
+    async def allocate(
+        self,
+        *,
+        recovery_run_id: str,
+        stranded: list[DisruptedBooking],
+        offers: list[RecoveryOffer],
+    ) -> RecoveryProposal:
+        remaining = {offer.offer_id: offer.capacity_units for offer in offers}
+        assignments: list[RecoveryAssignment] = []
+        unrecovered: list[str] = []
+        needs_approval: list[str] = []
+        explanations: dict[str, str] = {}
+
+        for booking in sorted(stranded, key=lambda b: (-b.quantity, b.booking_id)):
+            candidates = [
+                offer for offer in offers
+                if remaining[offer.offer_id] >= booking.quantity
+                and offer.arrival_at <= booking.latest_arrival
+                and (not offer.eligible_booking_ids or booking.booking_id in offer.eligible_booking_ids)
+            ]
+            if not candidates:
+                unrecovered.append(booking.booking_id)
+                explanations[booking.booking_id] = "No replacement sailing had room before the deadline."
+                continue
+
+            best = min(candidates, key=lambda o: (o.unit_price_minor * booking.quantity, o.offer_id))
+            price = best.unit_price_minor * booking.quantity
+            remaining[best.offer_id] -= booking.quantity
+            assignments.append(
+                RecoveryAssignment(
+                    booking_id=booking.booking_id,
+                    offer_id=best.offer_id,
+                    sailing_id=best.sailing_id,
+                    carrier_id=best.carrier_id,
+                    quantity=booking.quantity,
+                    quoted_price_minor=price,
+                    arrival_at=best.arrival_at,
+                )
+            )
+            if price > booking.original_price_minor + booking.max_additional_cost_minor:
+                needs_approval.append(booking.booking_id)
+            explanations[booking.booking_id] = f"Moved to {best.sailing_id} ({best.carrier_id})."
+
+        return RecoveryProposal(
+            recovery_run_id=recovery_run_id,
+            assignments=tuple(assignments),
+            unrecovered_booking_ids=tuple(unrecovered),
+            needs_approval_booking_ids=tuple(needs_approval),
+            explanations=explanations,
+            verified_capacity={offer.offer_id: offer.capacity_units for offer in offers},
+            input_version="fake",
+        )
+
+
+class FakeApprovalSeam:
+    """Stands in for Tisya's ASI:One approval flow. Pass the decision you want to test."""
+
+    def __init__(self, decision: str = "APPROVED") -> None:
+        self._decision = decision
+        self._requests: dict[str, str] = {}
+
+    async def request_approval(self, *, proposal: RecoveryProposal, booking_id: str, buyer_id: str) -> str:
+        approval_id = f"apr_{proposal.recovery_run_id}_{booking_id}"
+        self._requests[approval_id] = buyer_id
+        return approval_id
+
+    async def approval_status(self, approval_id: str) -> str:
+        return self._decision if approval_id in self._requests else "EXPIRED"

@@ -145,6 +145,12 @@
 - User decision: Payment Protocol is required but deferred; hosted Checkout link for Phase 4 (decision 0006 updated).
 - Still blocked: Tisya's OK for additive contract messages (hold/confirm). Building Exchange-side intents/graph against a HoldClient interface meanwhile.
 
+### 2026-10-17 17:45 — [Parth] Merges + contract OK
+- Merged on user's request (squash, branches deleted): Tisya #9 (console review page), #8 (local dev DB, Phase 5 live evidence), #7 (OR-Tools allocation; resolved `progress.md` conflict keeping both sides; her suite 26 passed + read-only live capacity test passed vs Parth's Tiger), then Parth #5 (seams install, disruption status, migration 003). Suites on main: root 117, carriers 54, seams 18, console unit 20.
+- **Tisya OK'd (via user, 2026-10-17)** the additive `packages/freight_contracts` messages: REQUEST_HOLD, HOLD_CONFIRMED, HOLD_REJECTED, RELEASE_HOLD, HOLD_RELEASED, CONFIRM_BOOKING, BOOKING_CONFIRMED, BOOKING_REJECTED.
+- Phase 4 branch `parth/phase4-booking` updated with main (pyproject/progress conflicts resolved), 131 passed.
+- Open NEEDS-FROM-PARTH from Tisya: init_carrier_identities empty-value bug (#8); record `max_additional_cost_minor` at booking (D5, #7); add `freight-allocation` dep in Phase 7.
+
 ## Checkpoint template (append concise updates)
 ### YYYY-MM-DD HH:MM — Phase NN
 - Done:
@@ -159,3 +165,36 @@
 - Files: progress.md (this required checkpoint only).
 - Blockers / decisions: PRD native-payment requirement conflicts with selected Stripe test-only Checkout; PRD gateway recommendation differs from active direct-LangGraph spec. Proposed scope reductions remain recommendations, not approved changes. Phase 1 remains NOT VERIFIED.
 - Next action: Team confirms demo scope, builder count, recovery authority/priority and documentation reconciliation; implementation still starts with Phase 1 real ASI:One roundtrip gate.
+
+### 2026-10-17 — [Tisya] Proposed: recovery decision moves to Tisya (pending Parth's OK)
+- Proposal (branch `tisya/recovery-split`, not merged): Parth talks to the carriers and makes bookings real; Tisya decides who goes where, checks carrier claims against Tiger, gets approval, explains. Step-by-step owners in `OWNERSHIP.md`.
+- Phase 6 split: Parth = `REQUEST_RECOVERY_CAPACITY` over ACP + message validation; Tisya = claim checks + OR-Tools allocation (`AllocationSeam`, new `packages/freight_allocation/`). Phase 7 split: Parth = holds, confirm, supersede, re-solve trigger (`RecoverySeam`); Tisya = approval (`ApprovalSeam`) and recovery cards.
+- Seams added: `AllocationSeam`, `ApprovalSeam`, types `RecoveryOffer`, `RecoveryProposal`, fakes `FakeAllocationSeam` (greedy, not the solver), `FakeApprovalSeam`, `demo_recovery_offers()`.
+- Fixed: seams README wrongly said `console/pyproject.toml` depends on `freight-seams`. It does not yet.
+- Open: `max_additional_cost_minor` (D5) is stored nowhere; defaults to 0 until phase 4 records it. Buyer identity (Parth's finding: shared `agentverse_sender`) is Tisya's to investigate.
+- Real `DisruptionSeam` (Tiger-backed) does not exist yet: console's `withdraw_sailing` is not wired to the seam and `disrupted_bookings()` is unimplemented.
+
+### 2026-10-17 — [Tisya] Recovery split approved
+- Parth approved the split in person; merged as PR #6 (af583d4). Supersedes "pending Parth's OK" above. Tisya owns phase 6 allocation (claim checks + OR-Tools), approval (`ApprovalSeam`), recovery cards; Parth owns recovery offers over ACP and phase 7 commitments.
+- Buyer identity (Parth, branch parth/seams-and-disruption-status): `agentverse_sender` is per ASI:One account and stable across sessions; no investigation needed from Tisya. Still open for Tisya: can the agent message a buyer unprompted (async closure update); test alongside the card spike.
+- Fetch Agent Payment Protocol is Parth's (Phase 4, decision 0006).
+
+### 2026-10-17 — [Tisya] Phase 06 allocation: in progress (branch tisya/allocation-solver)
+- Done: `packages/freight_allocation/` (own uv project, ortools 9.15.6755, freight-seams non-editable). `verify.py` claim checks (trusted = min(claimed, sellable on sailing)); `capacity.py` (`TigerCapacityReader`: AVAILABLE slots on ACTIVE sailings; `StaticCapacity` for tests); `model.py` CP-SAT, 4 lexicographic stages (most recovered, fewest approvals, lowest cost, earliest arrival), single worker + fixed seed; `explain.py` per-booking buyer text; `seam.py` `SolverAllocationSeam` implements `AllocationSeam`.
+- Evidence so far (unit, no DB): spec 06 WP5 fixture → BK-1001 (2, no split) on BEA-201, BK-1002 on COV-301, 0 approvals, cost 810000 minor, proven optimal.
+- Decision to confirm with Parth: added "fewest approvals" as stage 2, between spec 06's "most recovered" and "lowest cost", so the solver prefers a plan the buyer doesn't have to sign off on.
+- Next: AT-06-01..05 tests, claim-check and determinism tests, live Tiger reader test (skips without DB), README, PR. AT-06-06 (one-shot ACP, no recovery counteroffers) is Parth's side.
+
+### 2026-10-17 — [Tisya] Phase 06 allocation: implemented, unit-tested (branch tisya/allocation-solver)
+- Done: `SolverAllocationSeam` (real `AllocationSeam`) = claim checks → CP-SAT joint allocation → per-booking explanations; `TigerCapacityReader` for claim checks; README.
+- Tests (`cd packages/freight_allocation && uv run pytest -q`): 26 passed, 1 skipped (live Tiger read, no DB URL). Covers AT-06-01 (spec baseline; same shape with renamed ids and reversed inputs), joint beats cheapest-first, AT-06-02 (honest partial without Cove; A cannot squeeze onto Cove without Beacon), AT-06-03 (cheaper second option changes the answer; equal price goes to earlier arrival), AT-06-04 (no-split never split; splittable may span sailings), AT-06-05 (one slot never used twice; offers on one ship share its slots), overstated claims, unknown sailings, approvals, fewest-approvals-over-cost, deadlines, expiry, currency, empty inputs, validation, determinism, input_version.
+- Not evidence of: Tiger, ACP or ASI:One. All unit tests. AT-06-06 is Parth's side.
+- Open for Parth: D4 (stage 1 counts bookings, not containers: Beacon alone saves B over A on cost); D5 still unstored (defaults to 0); root project needs `freight-allocation` (with ortools) only when phase 7 calls the real seam.
+- Next (Tisya): own Tiger DB → run the live reader test and console live tests; `TigerDisruptionSeam`; then cards.
+
+### 2026-10-17 — [Tisya] Own dev database + Phase 05 live evidence (branch tisya/dev-db)
+- Local TimescaleDB 2.30.2 in Docker (`freight-tiger-dev`, 127.0.0.1:5433), same version as Parth's Tiger Cloud. `.env` local URL + generated password + generated carrier seeds (none printed). `console/scripts/dev_db.py up|reset` creates or wipes, migrates, seeds, preseeds B and C; refuses any non-local URL.
+- Evidence: migrate → 001_core, 002_negotiation_selection; seed → ports 2, carriers 3, sailings 6, slots 18. Console `uv run pytest -q` with DB → **17 passed** (13 unit + 4 live: unknown sailing rejected, cross-carrier rejected (AT-05-04), idempotent withdrawal (AT-05-03), other sailings untouched (AT-05-02)). Withdrawal of ATL-101 and BEA-202 disrupted exactly the bookings on them; events SAILING_WITHDRAWN ×2, BOOKING_DISRUPTED ×2. Allocation live reader (branch tisya/allocation-solver): 1 passed; read BEA-201=2, COV-301=1.
+- Fixed: console live tests errored at teardown ("Event loop is closed"): module-scoped pool cleanup across per-test event loops. Now per test.
+- NEEDS-FROM-PARTH: `scripts/init_carrier_identities.py` treats keys present-but-empty (as copied from `.env.example`) as set, so all three carriers get the same identity from an empty seed and `db.py seed` then fails. Suggest treating an empty value as missing. Worked around in `dev_db.py`.
+- Not covered: migrations 003/004 (Parth's open branches) not applied here yet; rerun `dev_db.py up` after they merge.
