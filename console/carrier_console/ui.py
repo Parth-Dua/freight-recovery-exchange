@@ -19,22 +19,24 @@ CARRIER_COLORS = {
 }
 
 STYLE = """
-body { font-family: 'IBM Plex Sans', system-ui, sans-serif; background: var(--cds-background); }
-.page { max-width: 1312px; margin: 0 auto; padding: 80px 32px 64px; box-sizing: border-box; }
-.page h1 { font-size: 2rem; line-height: 2.5rem; font-weight: 400; margin: 0; }
-.lede { color: var(--cds-text-secondary); margin: 8px 0 0; max-width: 60ch; }
+body { font-family: 'IBM Plex Sans', system-ui, sans-serif; background: var(--cds-background); font-size: 16px; line-height: 1.5; }
+p, td, dd, li { overflow-wrap: anywhere; }
+.page { max-width: 1240px; margin: 0 auto; padding: 104px 40px 96px; box-sizing: border-box; }
+@media (max-width: 720px) { .page { padding: 88px 16px 64px; } }
+.page h1 { font-size: clamp(1.75rem, 4vw, 2.5rem); line-height: 1.2; font-weight: 400; margin: 0; }
+.lede { color: var(--cds-text-secondary); margin: 12px 0 0; max-width: 62ch; font-size: 1.125rem; line-height: 1.6; }
 .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
 .muted { color: var(--cds-text-secondary); }
-.stack { display: flex; flex-direction: column; gap: 32px; }
-.row { display: flex; gap: 32px; flex-wrap: wrap; }
+.stack { display: flex; flex-direction: column; gap: 48px; }
+.row { display: flex; gap: 48px; flex-wrap: wrap; }
 .row > .grow { flex: 999 1 560px; min-width: 0; }
 .row > .side { flex: 1 1 320px; min-width: 0; }
 .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1px;
          background: var(--cds-border-subtle-01); }
-.facts > div { background: var(--cds-layer-01); padding: 16px; }
-.facts dt { font-size: .75rem; color: var(--cds-text-secondary); margin: 0 0 4px; }
+.facts > div { background: var(--cds-layer-01); padding: 20px 24px; min-width: 0; }
+.facts dt { font-size: .875rem; color: var(--cds-text-secondary); margin: 0 0 8px; }
 .facts dd { margin: 0; font-size: 1.25rem; }
-.big { font-size: 3.5rem; line-height: 1; font-weight: 300; }
+.big { font-size: clamp(2.25rem, 6vw, 4rem); line-height: 1.05; font-weight: 300; overflow-wrap: anywhere; }
 .ct { display: inline-block; position: relative; width: 28px; height: 16px; box-sizing: border-box;
       border: 1px solid rgba(0,0,0,.45); vertical-align: middle;
       background-image: repeating-linear-gradient(90deg, rgba(0,0,0,.22) 0 2px, transparent 2px 6px); }
@@ -54,9 +56,12 @@ body { font-family: 'IBM Plex Sans', system-ui, sans-serif; background: var(--cd
 .hull .note { position: absolute; left: calc(67.5% + 8px); top: -28px; font-size: .75rem; color: #F26B1D; white-space: nowrap; }
 .hz { display: inline-block; width: 16px; height: 10px; border: 1px solid #E5399B; vertical-align: middle;
       background: repeating-linear-gradient(45deg, #E5399B 0 2px, transparent 2px 5px); }
-td.mono, th { white-space: nowrap; }
+th { white-space: nowrap; }
+.cds--data-table td { padding-top: 14px; padding-bottom: 14px; }
+.cds--data-table-header { padding: 20px 24px 16px; }
 .cds--data-table td { vertical-align: middle; }
-.cds--header__global { align-items: center; padding-right: 16px; }
+.cds--header__global { align-items: center; padding-right: 16px; gap: 16px; min-width: 0; }
+@media (max-width: 900px) { .hide-narrow { display: none; } }
 .switcher { background: transparent; color: var(--cds-text-primary); border: 0;
             border-bottom: 1px solid var(--cds-border-strong-01); font: inherit; padding: 4px 8px; }
 """
@@ -89,7 +94,7 @@ def shell(title: str, body: str, *, active: str, carrier_id: str, carriers: list
   <nav class="cds--header__nav" aria-label="Carrier console"><ul class="cds--header__menu-bar">{items}</ul></nav>
   <div class="cds--header__global">
     <label for="carrier" class="cds--visually-hidden">Carrier</label>
-    <a class="cds--link" href="/market" style="margin-right: 24px;">Market view ↗</a>
+    <a class="cds--link" href="/market">Market view ↗</a>
     <select id="carrier" class="switcher" onchange="location.href='/carrier/'+this.value+'/{escape(active)}'">{options}</select>
   </div>
 </header>

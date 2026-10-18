@@ -21,21 +21,26 @@ INK = "#F4F4F4"
 STEPS = (("disruption", "Disruption"), ("negotiation", "Negotiation"), ("allocation", "Allocation"))
 
 MARKET_STYLE = """
-.steps { display: flex; gap: 32px; border-bottom: 1px solid var(--cds-border-subtle-01); margin-bottom: 32px; flex-wrap: wrap; }
+.steps { display: flex; gap: 40px; border-bottom: 1px solid var(--cds-border-subtle-01); margin-bottom: 48px; flex-wrap: wrap; font-size: 1.0625rem; }
 .steps a { padding: 12px 0; color: var(--cds-text-secondary); text-decoration: none; border-bottom: 2px solid transparent; }
 .steps a.on { color: var(--cds-text-primary); border-bottom-color: var(--cds-border-interactive); }
 .xray-bar { background: rgba(229,57,155,.12); border-bottom: 1px solid #E5399B; color: #FF7EB6; padding: 8px 32px;
             position: fixed; top: 48px; left: 0; right: 0; z-index: 5; font-size: .875rem; }
-.msg { display: grid; grid-template-columns: 1fr auto; gap: 2px 16px; padding: 16px 0; border-bottom: 1px solid var(--cds-border-subtle-01); }
+.msg { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; padding: 20px 0; border-bottom: 1px solid var(--cds-border-subtle-01); }
 .msg .who { font-weight: 600; } .msg .text { grid-column: 1 / 3; color: var(--cds-text-secondary); }
-.msg .price { grid-column: 1 / 3; font-size: 1.75rem; }
+.msg .price { grid-column: 1 / 3; font-size: 2rem; line-height: 1.2; }
 .versus { display: flex; flex-wrap: wrap; gap: 1px; }
-.versus > div { flex: 1 1 320px; padding: 24px; }
-.versus .n { font-size: 6rem; line-height: 1; font-weight: 300; }
-.stranded { display: inline-flex; align-items: center; justify-content: center; width: 72px; height: 40px; font-weight: 600;
-            color: #161616; background-color: #F26B1D; border: 1px solid rgba(0,0,0,.5);
-            background-image: repeating-linear-gradient(45deg, rgba(22,22,22,.55) 0 3px, transparent 3px 8px),
-                              repeating-linear-gradient(90deg, rgba(0,0,0,.22) 0 2px, transparent 2px 6px); }
+.versus > div { flex: 1 1 320px; padding: 32px; min-width: 0; }
+.versus .n { font-size: clamp(3.5rem, 9vw, 6.5rem); line-height: 1; font-weight: 300; margin: 16px 0; }
+.convo { display: flex; gap: 48px; flex-wrap: wrap; }
+.convo > div { flex: 1 1 380px; min-width: 0; }
+.stranded { display: inline-flex; flex-direction: column; align-items: center; gap: 8px; }
+.stranded .box { position: relative; width: 104px; height: 56px; background-color: #F26B1D; border: 1px solid rgba(0,0,0,.5);
+                 background-image: repeating-linear-gradient(90deg, rgba(0,0,0,.18) 0 2px, transparent 2px 7px);
+                 display: flex; align-items: center; justify-content: center; }
+.stranded .box b { background: #F4F4F4; color: #161616; font-size: 1.25rem; width: 32px; height: 32px;
+                   display: flex; align-items: center; justify-content: center; }
+.stranded .id { font-size: .8125rem; color: var(--cds-text-secondary); }
 """
 
 
@@ -70,7 +75,7 @@ def market_shell(body: str, *, snap: MarketSnapshot | None, step: str, xray: boo
 <body class="cds--g100">
 <header class="cds--header" aria-label="Freight exchange market view">
   <a class="cds--header__name" href="{link()}"><span class="cds--header__name--prefix">Freight exchange</span>&nbsp;Market view</a>
-  <div class="cds--header__global" style="gap: 16px;">{sample}{toggle}<span class="muted" style="font-size: .875rem;">Demo view · read only</span></div>
+  <div class="cds--header__global">{sample}{toggle}<a class="cds--link" href="/">Carrier console</a><span class="muted hide-narrow" style="font-size: .875rem;">Demo view · read only</span></div>
 </header>
 {bar}
 <main class="page" style="{"padding-top: 112px;" if xray else ""}"><nav class="steps" aria-label="Recovery steps">{steps}</nav>{body}</main>
@@ -84,7 +89,7 @@ def _label(snap: MarketSnapshot, booking_id: str) -> str:
 
 def disruption(snap: MarketSnapshot) -> str:
     containers = "".join(
-        f'<span class="stranded" title="{escape(s.booking_id)}">{s.label}</span>'
+        f'<span class="stranded"><span class="box"><b>{s.label}</b></span><span class="id mono">{escape(s.booking_id)}</span></span>'
         for s in snap.stranded for _ in range(s.quantity)
     )
     total = sum(s.quantity for s in snap.stranded)
@@ -105,7 +110,8 @@ def disruption(snap: MarketSnapshot) -> str:
       over the Hormuz advisory. {total} containers have no ship.</p></div>
   <div class="row" style="align-items: flex-end;">
     <div class="grow">{ui.ship(0, snap.withdrawn_by, "exchange slots now empty")}
-      <div style="display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap;">{containers}</div></div>
+      <p class="cds--label" style="margin: 32px 0 12px;">Stranded containers</p>
+      <div style="display: flex; gap: 16px; flex-wrap: wrap;">{containers}</div></div>
   </div>
   {ui.table("Stranded bookings", "Posted to the board in this order. Prices and limits stay private.",
             ["Buyer", "Booking", "Containers", "Due", "Must deliver"], rows, "Nobody was on this sailing.")}
@@ -127,52 +133,61 @@ def _line_state(snap: MarketSnapshot, s: Session) -> tuple[str, str, str]:
 
 
 def _graph(snap: MarketSnapshot, selected: Session | None, xray: bool, link) -> str:
-    buyers = {s.booking_id: 80 + i * 170 for i, s in enumerate(snap.stranded)}
-    carriers = {c.carrier_id: 110 + j * 125 for j, c in enumerate(snap.carriers)}
-    height = max([*buyers.values(), *carriers.values(), 300]) + 90
-    lines, labels, notes = [], [], []
-    per_buyer: dict[str, int] = {}
+    """Buyers on the left, carriers on the right, one straight line per negotiation. Each line's
+    label sits on its own dark plate near the carrier end, stacked so labels never overlap."""
+    row_b, row_c = 190, 140
+    buyers = {s.booking_id: 150 + i * row_b for i, s in enumerate(snap.stranded)}
+    carriers = {c.carrier_id: 150 + j * row_c for j, c in enumerate(snap.carriers)}
+    height = max([*buyers.values(), *carriers.values()]) + 120
+    bx, cx = 230, 600  # line ends: right edge of buyer labels, left edge of carrier boxes
+    lines, plates, notes = [], [], []
     per_carrier: dict[str, int] = {}
-    for k, s in enumerate(snap.sessions):
+    for s in snap.sessions:
         if s.booking_id not in buyers or s.carrier_id not in carriers:
             continue
-        bi = per_buyer[s.booking_id] = per_buyer.get(s.booking_id, -1) + 1
         ci = per_carrier[s.carrier_id] = per_carrier.get(s.carrier_id, -1) + 1
-        y1, y2, x = buyers[s.booking_id] - 8 + bi * 8, carriers[s.carrier_id] - 8 + ci * 8, 250 + k * 26
+        y1, y2 = buyers[s.booking_id], carriers[s.carrier_id]
         color, dash, label = _line_state(snap, s)
-        width = 3 if selected and s.session_id == selected.session_id else 1.5
-        stroke = BLUE if width == 3 else color
-        lines.append(f'<a href="{link(session=s.session_id)}"><path d="M200 {y1} L{x} {y1} L{x} {y2} L440 {y2}" fill="none" '
-                     f'stroke="{stroke}" stroke-width="{width}" stroke-dasharray="{dash}"></path></a>')
-        labels.append(f'<text x="436" y="{carriers[s.carrier_id] - 22 - ci * 15}" text-anchor="end" fill="{stroke}" '
-                      f'font-size="12" font-family="IBM Plex Mono">Buyer {snap.booking(s.booking_id).label if snap.booking(s.booking_id) else "?"} · {escape(label)}</text>')
+        on = bool(selected and s.session_id == selected.session_id)
+        stroke = BLUE if on else color
+        lines.append(f'<a href="{link(session=s.session_id)}"><line x1="{bx}" y1="{y1}" x2="{cx}" y2="{y2}" stroke="{stroke}" '
+                     f'stroke-width="{4 if on else 2}" stroke-dasharray="{dash}" stroke-linecap="round"></line>'
+                     f'<line x1="{bx}" y1="{y1}" x2="{cx}" y2="{y2}" stroke="transparent" stroke-width="16"></line></a>')
         b = snap.booking(s.booking_id)
+        text = f"{b.label if b else '?'} · {label}"
+        width = 14 + len(text) * 8.4
+        py = y2 - 34 - ci * 30
+        plates.append(f'<a href="{link(session=s.session_id)}"><rect x="{cx - width - 6:.0f}" y="{py - 15}" width="{width:.0f}" height="24" '
+                      f'fill="#161616" stroke="{stroke}" stroke-width="1"></rect>'
+                      f'<text x="{cx - 13}" y="{py + 2}" text-anchor="end" fill="{stroke}" font-size="14" '
+                      f'font-family="IBM Plex Mono">{escape(text)}</text></a>')
         floor = snap.floors_minor.get(s.carrier_id)
         if xray and b and floor and b.max_per_container_minor < floor:
-            yb = buyers[s.booking_id] + 30
-            notes.append(f'<g><rect x="88" y="{yb}" width="150" height="40" fill="#161616" stroke="{MAGENTA}"></rect>'
-                         f'<text x="96" y="{yb + 16}" fill="{MAGENTA}" font-size="12">Outside limits, needs OK</text>'
-                         f'<text x="96" y="{yb + 32}" fill="{MAGENTA}" font-size="11" font-family="IBM Plex Mono">'
-                         f'{_money(b.max_per_container_minor)} max &lt; {_money(floor)} floor</text></g>')
+            yb = buyers[s.booking_id] + 44
+            notes.append(f'<rect x="20" y="{yb}" width="210" height="48" fill="#161616" stroke="{MAGENTA}"></rect>'
+                         f'<text x="30" y="{yb + 20}" fill="{MAGENTA}" font-size="14">Outside limits, needs OK</text>'
+                         f'<text x="30" y="{yb + 38}" fill="{MAGENTA}" font-size="13" font-family="IBM Plex Mono">'
+                         f'{_money(b.max_per_container_minor)} max &lt; {_money(floor)} floor</text>')
     nodes = []
     for s in snap.stranded:
         y = buyers[s.booking_id]
-        nodes.append(f'<rect x="20" y="{y - 16}" width="56" height="32" fill="#F26B1D"></rect>'
-                     f'<rect x="20" y="{y - 16}" width="56" height="32" fill="url(#hatch)"></rect>'
-                     f'<text x="90" y="{y - 2}" fill="{INK}" font-size="16" font-weight="600">Buyer {s.label}</text>'
-                     f'<text x="90" y="{y + 16}" fill="#A8A8A8" font-size="12">{s.quantity} × 20GP · by {s.due:%d %b}</text>')
+        nodes.append(f'<rect x="20" y="{y - 20}" width="64" height="40" fill="#F26B1D"></rect>'
+                     f'<rect x="20" y="{y - 20}" width="64" height="40" fill="url(#ribs)"></rect>'
+                     f'<rect x="40" y="{y - 12}" width="24" height="24" fill="#F4F4F4"></rect>'
+                     f'<text x="52" y="{y + 6}" text-anchor="middle" fill="#161616" font-size="16" font-weight="600">{s.label}</text>'
+                     f'<text x="98" y="{y - 2}" fill="{INK}" font-size="18" font-weight="600">Buyer {s.label}</text>'
+                     f'<text x="98" y="{y + 20}" fill="#A8A8A8" font-size="14">{s.quantity} × 20GP · by {s.due:%d %b}</text>')
     for c in snap.carriers:
         y = carriers[c.carrier_id]
         color = ui.CARRIER_COLORS.get(c.carrier_id, "#8D8D8D")
         sub = " · ".join(p for p in (c.sailing_id or "", f"arrives {c.arrival_at:%d %b}" if c.arrival_at else "", c.note) if p)
-        nodes.append(f'<rect x="446" y="{y - 15}" width="52" height="30" fill="{color}"></rect>'
-                     f'<rect x="446" y="{y - 15}" width="52" height="30" fill="url(#ribs)"></rect>'
-                     f'<text x="510" y="{y - 1}" fill="{INK}" font-size="16" font-weight="600">{escape(c.name.split()[0])}</text>'
-                     f'<text x="510" y="{y + 16}" fill="#A8A8A8" font-size="12">{escape(sub)}</text>')
-    return f"""<svg viewBox="0 0 760 {height}" role="img" aria-label="Lines from stranded buyers to the carriers negotiating with them" style="width: 100%; height: auto; font-family: 'IBM Plex Sans', sans-serif;">
-  <defs><pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="3" height="8" fill="rgba(22,22,22,.55)"></rect></pattern>
-  <pattern id="ribs" width="6" height="6" patternUnits="userSpaceOnUse"><rect width="2" height="6" fill="rgba(0,0,0,.22)"></rect></pattern></defs>
-  {"".join(lines)}{"".join(nodes)}{"".join(labels)}{"".join(notes)}
+        nodes.append(f'<rect x="{cx + 8}" y="{y - 20}" width="64" height="40" fill="{color}"></rect>'
+                     f'<rect x="{cx + 8}" y="{y - 20}" width="64" height="40" fill="url(#ribs)"></rect>'
+                     f'<text x="{cx + 88}" y="{y - 2}" fill="{INK}" font-size="18" font-weight="600">{escape(c.name.split()[0])}</text>'
+                     f'<text x="{cx + 88}" y="{y + 20}" fill="#A8A8A8" font-size="14">{escape(sub)}</text>')
+    return f"""<svg viewBox="0 0 1000 {height}" role="img" aria-label="Straight lines from stranded buyers to the carriers negotiating with them" style="width: 100%; height: auto; font-family: 'IBM Plex Sans', sans-serif;">
+  <defs><pattern id="ribs" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="2" height="7" fill="rgba(0,0,0,.2)"></rect></pattern></defs>
+  {"".join(lines)}{"".join(nodes)}{"".join(plates)}{"".join(notes)}
 </svg>"""
 
 
@@ -229,7 +244,8 @@ def negotiation(snap: MarketSnapshot, selected: Session | None, xray: bool, link
     agreed = sum(s.status == "ACCEPTED" for s in snap.sessions)
     refused = sum(s.status in ("REJECTED", "EXHAUSTED", "EXPIRED") for s in snap.sessions)
     waiting = sum(1 for l in snap.legs if l.needs_approval and l.status != "CONFIRMED")
-    convo = '<p class="muted">Pick a line to read that negotiation.</p>'
+    convo = ""
+
     if selected:
         msgs = "".join(
             f'<div class="msg"><span class="who">{escape(snap.carrier(selected.carrier_id).name.split()[0] if m.sender_role == "carrier" else _label(snap, selected.booking_id))}\'s agent</span>'
@@ -239,18 +255,18 @@ def negotiation(snap: MarketSnapshot, selected: Session | None, xray: bool, link
         )
         result = (f'<p>✓ Agreed at <span class="mono">{_money(selected.final_price_minor)}</span> per container.</p>'
                   if selected.status == "ACCEPTED" else f'<p class="muted">{escape(selected.reason or selected.status.lower())}</p>')
-        convo = (f'<h2 style="font-size: 1.5rem; font-weight: 400; margin: 0;">{_label(snap, selected.booking_id)} ↔ '
+        convo = (f'<section><h2 style="font-size: 1.75rem; font-weight: 400; margin: 0;">{_label(snap, selected.booking_id)} ↔ '
                  f'{escape(snap.carrier(selected.carrier_id).name.split()[0])}</h2>'
-                 f'<p class="muted mono" style="margin: 4px 0 0;">session {escape(selected.session_id)}</p>{msgs}{result}'
-                 f'{_price_track(snap, selected) if xray else ""}'
-                 f'<p class="muted" style="font-size: .875rem;">Written by the two agents. Nobody typed these.</p>')
+                 f'<p class="muted" style="margin: 6px 0 16px;">Recovery negotiation <span class="mono">{escape(selected.session_id)}</span> · '
+                 f'written by the two agents, nobody typed these</p>'
+                 f'<div class="convo"><div>{msgs}{result}</div>'
+                 f'{"<div>" + _price_track(snap, selected) + "</div>" if xray else ""}</div></section>')
     return f"""
 <div class="stack">
-  <div><h1>Agents are bargaining</h1><p class="lede">{len(snap.sessions)} sessions · {agreed} prices agreed · {refused} refused · {waiting} waiting on a buyer</p></div>
-  <div class="row">
-    <div class="grow">{_graph(snap, selected, xray, link)}</div>
-    <div class="side" style="flex-basis: 400px;">{convo}</div>
-  </div>
+  <div><h1>Agents are bargaining</h1><p class="lede">{len(snap.sessions)} sessions · {agreed} prices agreed · {refused} refused · {waiting} waiting on a buyer.
+    Pick a line to read that negotiation.</p></div>
+  <div style="max-width: 1100px;">{_graph(snap, selected, xray, link)}</div>
+  {convo}
 </div>"""
 
 

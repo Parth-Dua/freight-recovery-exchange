@@ -49,5 +49,5 @@ def test_allocation_compares_first_come_with_the_exchange() -> None:
 
 def test_disruption_lists_every_stranded_container() -> None:
     html = market_view.disruption(sample_snapshot())
-    assert html.count('class="stranded"') == 4
+    assert html.count('class="stranded"') == 4  # 2 for A, 1 each for B and C
     assert "ATL-101 withdrawn" in html
