@@ -151,6 +151,13 @@
 - Phase 4 branch `parth/phase4-booking` updated with main (pyproject/progress conflicts resolved), 131 passed.
 - Open NEEDS-FROM-PARTH from Tisya: init_carrier_identities empty-value bug (#8); record `max_additional_cost_minor` at booking (D5, #7); add `freight-allocation` dep in Phase 7.
 
+### 2026-10-17 17:55 — [Parth] Phase 04 live flow (branch parth/phase4-booking)
+- Built: contracts (hold/confirm, additive, Tisya OK), carrier handlers, `AcpHoldClient`, `BookingService` + graph node `book` (book / paid / cancel), receipt with claim code, migration 005 (recovery allowance, default 0, opt-in "auto-rebook up to $X"), fix to `init_carrier_identities.py` (empty seeds filled in place). Root 151 passed; carriers 54 unit + 7 live.
+- **Incident (Parth's agent):** while verifying merges, Tisya's console live tests ran against Parth's Tiger Cloud (they `load_dotenv` the repo .env, so `env -u TIGER_DATABASE_URL` didn't stop them) and withdrew ATL-101/ATL-102/BEA-201/BEA-202 at 00:25/00:30 UTC ("pytest integration run"; 0 bookings). Restored in one scoped transaction: 4 test SAILING_WITHDRAWN events + 4 disruption_events deleted, 14 slots → AVAILABLE, 4 sailings → ACTIVE. Rule for us: run console unit tests with `TIGER_DATABASE_URL=` (empty, not unset). NEEDS-FROM-TISYA: guard console live tests against non-local URLs (like dev_db.py).
+- **Live HTTP run (real carriers + Tiger + Stripe TEST)**, session in scratchpad: quote req_95400d3a8015 (Atlas $5,200→$4,940 accepted; Beacon $5,500→$5,280) → select 1 → `book it, auto-rebook up to $300 extra` → Atlas HOLD_CONFIRMED over ACP (ATL-101 2 slots HELD, holds ACTIVE 1) + Stripe test checkout $4,940 + $25 = $4,965 → `I paid` without paying → "Stripe has not received a payment", nothing booked (**AT-04-03 live**) → `cancel` → hold RELEASED, slots AVAILABLE, checkout expired → book again → new hold + checkout (left open for the user to pay).
+- Routing fix: imperative "book …" beats "auto-rebook"; status text updated.
+- Next: user pays the open checkout with test card 4242 → I send `paid` → expect PAYMENT_VERIFIED_TEST → CONFIRM_BOOKING → receipt (AT-04-05 success); decline card 4000 0000 0000 0002 → not booked; then full run in ASI:One (AT-04-06).
+
 ## Checkpoint template (append concise updates)
 ### YYYY-MM-DD HH:MM — Phase NN
 - Done:

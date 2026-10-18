@@ -115,3 +115,15 @@ def test_mentions_are_ignored_for_routing(message, route):
 
 def test_strip_mentions_keeps_emails_and_prices():
     assert r.strip_mentions("@freight-recovery-exc  ping test@example.com $5,600") == "ping test@example.com $5,600"
+
+
+@pytest.mark.parametrize(("message", "route"), [
+    ("book it, auto-rebook up to $300 extra", r.ROUTE_BOOKING),
+    ("please book it", r.ROUTE_BOOKING),
+    ("can you rebook my cargo?", r.ROUTE_RECOVERY),
+    ("my sailing was cancelled", r.ROUTE_RECOVERY),
+    ("I paid", r.ROUTE_PAID),
+    ("cancel", r.ROUTE_CANCEL),
+])
+def test_phase4_routes(message, route):
+    assert r.classify(message) == route

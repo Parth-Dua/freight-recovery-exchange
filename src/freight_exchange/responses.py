@@ -49,6 +49,8 @@ _ROUTE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
         r"check (?:my |the )?payment|did (?:my|the) payment|done paying|finished paying)\b")),
     (ROUTE_CANCEL, re.compile(r"\b(cancel(?!l)|release (?:the |my )?hold|don'?t book|stop (?:the )?booking)\b")),
     (ROUTE_SELECT, SELECT_INTENT),
+    # an imperative "book …" is a booking command even if it mentions "auto-rebook"
+    (ROUTE_BOOKING, re.compile(r"^\s*(?:please\s+|ok(?:ay)?,?\s+|yes,?\s+)?(?:book|reserve)\b")),
     # status questions beat booking words ("status of my booking")
     (ROUTE_RECOVERY, re.compile(
         r"\b(recover\w*|re-?rout\w*|disrupt\w*|withdraw\w*|rebook\w*|cancel+ed|my bookings?|"
@@ -302,7 +304,7 @@ def disruption_status_reply(withdrawals: list, bookings: list) -> str:
             since = f" since {when(b.disrupted_at)} UTC" if b.disrupted_at else ""
             lines.append(f"- {b.booking_id}: **{b.status}**{flag}{since} — {b.carrier_name}, sailing {b.sailing_id}{extra}")
     else:
-        lines.append("You have no bookings on record yet (booking from chat arrives in the next phase).")
+        lines.append("You have no bookings on record yet.")
     if any(b.is_disrupted for b in bookings) or any(w.disrupted_bookings for w in withdrawals):
         lines.append("")
         lines.append("Automatic recovery is not active yet: disrupted bookings have **not** been rebooked, "
