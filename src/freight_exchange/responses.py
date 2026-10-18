@@ -36,7 +36,8 @@ ROUTE_UNSUPPORTED = "unsupported"
 
 STATUS_LINE = (
     "Demo market: fictional carriers and simulated inventory. Payments run in Stripe TEST mode only "
-    "(no real money). Automatic recovery is not active yet."
+    "(no real money). If a carrier withdraws a sailing, affected bookings are recovered automatically and "
+    "shown as rebooked only after the new carrier confirms."
 )
 EXAMPLE_PROMPT = '"Quote 2x20GP from Jebel Ali to Mumbai, arrive by Oct 23, budget $5,600, don\'t split"'
 
@@ -104,7 +105,9 @@ def static_reply(route: str) -> str:
             "Ask me for quotes and I contact independent carrier agents in parallel, verify each "
             "carrier's signed offer and record everything in Tiger.\n"
             f"Try: {EXAMPLE_PROMPT}\n"
-            "Coming next: negotiation, booking with test-mode payment, and joint recovery when a sailing is withdrawn."
+            "I also counter once per carrier, book with a Stripe TEST checkout, and if a carrier withdraws a "
+            "sailing I ask the other carriers for space and rebook every affected booking together, within the "
+            "extra cost you approved or after you approve it."
         )
     return (
         "That's outside what I can do right now. I can list my corridors or fetch live carrier quotes — "
@@ -311,8 +314,9 @@ def disruption_status_reply(withdrawals: list, bookings: list) -> str:
         lines.append("You have no bookings on record yet.")
     if any(b.is_disrupted for b in bookings) or any(w.disrupted_bookings for w in withdrawals):
         lines.append("")
-        lines.append("Automatic recovery is not active yet: disrupted bookings have **not** been rebooked, "
-                     "and nothing has been charged or refunded.")
+        lines.append("Disrupted bookings above have **not** been rebooked yet. Recovery runs automatically; a "
+                     "booking shows as replaced only once a replacement carrier confirms. Nothing has been "
+                     "charged or refunded.")
     return "\n".join(lines)
 
 
