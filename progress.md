@@ -158,6 +158,11 @@
 - Routing fix: imperative "book …" beats "auto-rebook"; status text updated.
 - Next: user pays the open checkout with test card 4242 → I send `paid` → expect PAYMENT_VERIFIED_TEST → CONFIRM_BOOKING → receipt (AT-04-05 success); decline card 4000 0000 0000 0002 → not booked; then full run in ASI:One (AT-04-06).
 
+### 2026-10-17 18:05 — [Parth] Phase 04 paid path LIVE (AT-04-05 success, AT-04-02)
+- User paid the open Stripe TEST checkout with card 4242. `I paid` → Stripe retrieve: complete/paid, livemode=false, amount 496500 (494000 freight + 2500 fee) → payment_records PAYMENT_VERIFIED_TEST → CONFIRM_BOOKING over ACP → Atlas BOOKING_CONFIRMED → **BK-0A14FFE2** COMMITTED (ATL-101, 2×20GP, 494000, payment_terms "Freight prepaid to Atlas before departure (simulated)", max_additional_cost_minor 30000, claim_code_hash set); ATL-101 slots COMMITTED 2 / AVAILABLE 2; holds COMMITTED 1, RELEASED 1; intent BOOKING_CONFIRMED. Receipt shown with claim code (req_e51aed777794).
+- AT-04-02 live: `check payment` again → same receipt; bookings 1, CONFIRM_BOOKING messages 1, BOOKING_COMMITTED events 1 (no duplicate commit).
+- Remaining for gate: decline card 4000 0000 0000 0002 does not book (AT-04-05 failure half); full run through ASI:One (AT-04-06) — both need the user.
+
 ## Checkpoint template (append concise updates)
 ### YYYY-MM-DD HH:MM — Phase NN
 - Done:
