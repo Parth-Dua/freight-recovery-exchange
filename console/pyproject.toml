@@ -10,6 +10,8 @@ dependencies = [
     "psycopg-pool>=3.2,<4",
     "python-dotenv>=1.0,<2",
     "python-multipart>=0.0.18,<0.1",
+    "freight-disruption",
+    "freight-seams",
 ]
 
 [dependency-groups]
@@ -19,3 +21,9 @@ dev = ["pytest>=8,<9", "pytest-asyncio>=0.24,<0.25"]
 testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
+
+# Non-editable for the same reason as the root project (hidden .pth files on iCloud Macs).
+# After changing a package: uv sync --reinstall-package freight-disruption
+[tool.uv.sources]
+freight-disruption = { path = "../packages/freight_disruption", editable = false }
+freight-seams = { path = "../packages/freight_seams", editable = false }

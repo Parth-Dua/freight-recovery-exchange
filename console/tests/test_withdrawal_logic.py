@@ -70,7 +70,9 @@ def test_rejection_codes_cover_spec_05_cases() -> None:
 
 def test_withdrawal_scopes_every_write_by_sailing_id() -> None:
     """AT-05-02: nothing may change a booking on another sailing."""
-    source = inspect.getsource(withdrawal)
+    from freight_disruption import withdrawal as moved
+
+    source = inspect.getsource(moved)
     for statement in re.findall(r"UPDATE\s+(bookings|capacity_slots)(.+?)\"\"\"", source, re.S):
         assert "sailing_id = %s" in statement[1]
 
