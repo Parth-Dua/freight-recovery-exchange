@@ -14,11 +14,23 @@ from html import escape
 from urllib.parse import urlencode
 from uuid import uuid4
 
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from carrier_console.config import console_port, load_env
 from carrier_console.db import close_pools, get_pool
+from carrier_console.preferences import (
+    PRESETS,
+    Preferences,
+    PreferencesInvalid,
+    StoredPolicy,
+    VersionConflict,
+    apply_preset,
+    list_carriers,
+    load_policy,
+    preview,
+    save_policy,
+)
 from carrier_console.queries import SailingRow, committed_bookings, list_sailings, recent_disruptions
 from carrier_console.risk import RiskEvent, get_risk_event, load_risk_events
 from carrier_console.withdrawal import WithdrawSailing, WithdrawalRejected, withdraw_sailing
@@ -79,6 +91,19 @@ button:hover { filter: brightness(1.1); }
 a.ghost { color: var(--muted); text-decoration: none; padding: 8px 14px;
           border: 1px solid var(--line); border-radius: 7px; }
 a.ghost:hover { color: var(--ink); border-color: var(--muted); }
+nav.tabs { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; font-size: 13px; }
+nav.tabs a { color: var(--muted); text-decoration: none; }
+nav.tabs a:hover, nav.tabs a.on { color: var(--ink); }
+form.prefs { display: grid; gap: 14px; }
+form.prefs .field { display: grid; gap: 4px; }
+form.prefs label { font-weight: 600; font-size: 14px; }
+form.prefs input, form.prefs select { font: inherit; background: var(--bg); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; max-width: 320px; }
+form.prefs .help { color: var(--muted); font-size: 12px; }
+form.prefs .error { color: var(--danger); font-size: 12px; }
+form.prefs .goals { display: flex; gap: 10px; flex-wrap: wrap; }
+form.prefs button.save { background: var(--accent); }
+button.preset { background: var(--panel); color: var(--ink); border: 1px solid var(--line); font-weight: 500; }
 """
 
 
@@ -155,7 +180,17 @@ def _review_body(sailing: SailingRow, risk_event: RiskEvent, bookings: list[tupl
   </div>"""
 
 
-def _shell(body: str) -> str:
+def _nav(current: str = "sailings", carrier_id: str = "") -> str:
+    prefs_href = f"/carrier/{escape(carrier_id)}/preferences" if carrier_id else "/preferences"
+    return (
+        '<nav class="tabs">'
+        f'<a href="/" class="{"on" if current == "sailings" else ""}">Sailings and cancellations</a>'
+        f'<a href="{prefs_href}" class="{"on" if current == "preferences" else ""}">Pricing agent preferences</a>'
+        "</nav>"
+    )
+
+
+def _shell(body: str, nav: str = "") -> str:
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -164,6 +199,7 @@ def _shell(body: str) -> str:
   <header>
     <h1>Carrier Console</h1>
     <p class="sub">Operator view. Withdraw a sailing when an advisory makes it unsafe to run.</p>
+    {nav or _nav()}
   </header>
   {body}
 </div></body></html>"""
@@ -290,6 +326,199 @@ async def withdraw(
         f"{result.untouched_booking_count} committed booking(s) elsewhere untouched."
     )
     return _back(ok=message)
+
+
+# --- Pricing agent preferences ---------------------------------------------------------
+
+_PREF_HELP = {
+    "target_price": "Normal opening price for one 20ft container.",
+    "min_price": "Floor. Your agent never offers or accepts less, and never reveals it.",
+    "utilization_premium_pct": "How much the price rises as the ship fills (full ship = this much more).",
+    "concession_empty_pct": "Most your agent will discount on a counteroffer when the ship is empty.",
+    "concession_full_pct": "Most it will discount when the ship is nearly full.",
+    "disruption_surge_pct": "Markup when bidding for cargo stranded by another carrier's cancellation.",
+    "offer_ttl_minutes": "How long a quote stays valid.",
+    "max_hold_minutes": "How long space is held while a buyer pays.",
+    "selection": "Which sailing your agent offers first.",
+    "payment_terms": "Shown to the buyer on the receipt.",
+}
+
+_ERROR_KEY = {
+    "target_price_per_unit_minor": "target_price",
+    "min_price_per_unit_minor": "min_price",
+    "offer_ttl_seconds": "offer_ttl_minutes",
+    "max_hold_seconds": "max_hold_minutes",
+}
+
+_GOAL_LABEL = {"fill_ship": "Fill the ship", "balanced": "Balanced", "protect_margin": "Protect margin"}
+
+
+def _money(minor: int) -> str:
+    return f"${minor / 100:,.0f}"
+
+
+def _prefs_form(stored: StoredPolicy, prefs: Preferences, errors: dict[str, str], banner: str) -> str:
+    def err(key: str) -> str:
+        return f'<span class="error">{escape(errors[key])}</span>' if key in errors else ""
+
+    def number(key: str, label: str, value: int | float, unit: str) -> str:
+        return f"""
+    <div class="field">
+      <label for="{key}">{label} ({unit})</label>
+      <input id="{key}" name="{key}" type="number" min="0" step="1" value="{value:g}" required>
+      <span class="help">{escape(_PREF_HELP[key])}</span>{err(key)}
+    </div>"""
+
+    selection = "".join(
+        f'<option value="{v}"{" selected" if prefs.selection == v else ""}>{label}</option>'
+        for v, label in (("earliest_arrival", "Earliest arrival"), ("earliest_departure", "Earliest departure"))
+    )
+    presets = "".join(
+        f'<button type="submit" name="preset" value="{g}" class="preset" formnovalidate>{_GOAL_LABEL[g]}</button>'
+        for g in PRESETS
+    )
+    opening, lowest = preview(prefs)
+    cid = escape(stored.carrier_id)
+    return f"""
+  {banner}
+  <h2>{escape(stored.display_name)} · pricing agent</h2>
+  <div class="card">
+    <form class="prefs" method="post" action="/carrier/{cid}/preferences">
+      <input type="hidden" name="expected_version" value="{stored.version}">
+      <input type="hidden" name="business_goal" value="{escape(prefs.business_goal)}">
+      <div class="field">
+        <label>Business goal: {_GOAL_LABEL.get(prefs.business_goal, prefs.business_goal)}</label>
+        <div class="goals">{presets}</div>
+        <span class="help">Picking a goal fills in the percentages below. Adjust any of them, then save.</span>
+        {err("business_goal")}
+      </div>
+      {number("target_price", "Target price per container", prefs.target_price_per_unit_minor / 100, "USD")}
+      {number("min_price", "Floor price per container", prefs.min_price_per_unit_minor / 100, "USD")}
+      {number("utilization_premium_pct", "Price rise as the ship fills", prefs.utilization_premium_pct, "%")}
+      {number("concession_empty_pct", "Max counteroffer discount, empty ship", prefs.concession_empty_pct, "%")}
+      {number("concession_full_pct", "Max counteroffer discount, full ship", prefs.concession_full_pct, "%")}
+      {number("disruption_surge_pct", "Crisis markup for stranded cargo", prefs.disruption_surge_pct, "%")}
+      {number("offer_ttl_minutes", "Quote valid for", prefs.offer_ttl_seconds / 60, "minutes")}
+      {number("max_hold_minutes", "Hold space while a buyer pays", prefs.max_hold_seconds / 60, "minutes")}
+      <div class="field">
+        <label for="selection">Offer first</label>
+        <select id="selection" name="selection">{selection}</select>
+        <span class="help">{escape(_PREF_HELP["selection"])}</span>{err("selection")}
+      </div>
+      <div class="field">
+        <label for="payment_terms">Payment terms</label>
+        <input id="payment_terms" name="payment_terms" type="text" maxlength="200"
+               value="{escape(prefs.payment_terms)}" required style="max-width:100%">
+        <span class="help">{escape(_PREF_HELP["payment_terms"])}</span>{err("payment_terms")}
+      </div>
+      <p class="meta">With these settings, a 4-slot ship that is half full opens at
+        <b>{_money(opening)}</b> per container and accepts counters down to <b>{_money(lowest)}</b>.</p>
+      <div class="actions">
+        <button type="submit" class="save">Save preferences</button>
+        <a class="ghost" href="/carrier/{cid}/preferences">Discard changes</a>
+        <span class="meta">Version {stored.version} · saved {stored.updated_at:%d %b %H:%M}</span>
+      </div>
+    </form>
+  </div>
+  <p class="note">These numbers stay with {escape(stored.display_name)}'s agent. Buyers and the exchange
+    never see them. The agent rereads them on every quote, so a save applies to its next offer.
+    Re-seeding the demo market resets them to the fixture.</p>"""
+
+
+def _carrier_switcher(carriers: list[tuple[str, str]], current: str) -> str:
+    links = " · ".join(
+        f'<a href="/carrier/{escape(cid)}/preferences" class="{"on" if cid == current else ""}">{escape(name)}</a>'
+        for cid, name in carriers
+    )
+    return f'<nav class="tabs">{links}</nav>'
+
+
+def _form_to_prefs(form: dict[str, str], current: Preferences) -> tuple[Preferences, dict[str, str]]:
+    """Parse the posted form. Bad numbers become field errors instead of a 422."""
+    errors: dict[str, str] = {}
+
+    def whole(key: str, scale: int = 1) -> int:
+        try:
+            return round(float(form.get(key, "")) * scale)
+        except ValueError:
+            errors[key] = "Enter a number."
+            return 0
+
+    prefs = Preferences(
+        business_goal=form.get("business_goal", current.business_goal),
+        target_price_per_unit_minor=whole("target_price", 100),
+        min_price_per_unit_minor=whole("min_price", 100),
+        utilization_premium_pct=whole("utilization_premium_pct"),
+        concession_empty_pct=whole("concession_empty_pct"),
+        concession_full_pct=whole("concession_full_pct"),
+        disruption_surge_pct=whole("disruption_surge_pct"),
+        offer_ttl_seconds=whole("offer_ttl_minutes", 60),
+        max_hold_seconds=whole("max_hold_minutes", 60),
+        selection=form.get("selection", current.selection),
+        payment_terms=form.get("payment_terms", ""),
+    )
+    return prefs, errors
+
+
+async def _prefs_page(carrier_id: str, prefs: Preferences | None = None,
+                      errors: dict[str, str] | None = None, banner: str = "") -> HTMLResponse:
+    pool = await get_pool()
+    stored = await load_policy(pool, carrier_id)
+    carriers = await list_carriers(pool)
+    if stored is None:
+        return HTMLResponse(_shell(f'<div class="banner err"><b>Unknown carrier</b>{escape(carrier_id)}</div>',
+                                   _nav("preferences")), status_code=404)
+    body = _carrier_switcher(carriers, carrier_id) + _prefs_form(
+        stored, prefs or stored.preferences(), errors or {}, banner)
+    return HTMLResponse(_shell(body, _nav("preferences", carrier_id)))
+
+
+@app.get("/preferences", response_model=None)
+async def preferences_home() -> RedirectResponse:
+    carriers = await list_carriers(await get_pool())
+    target = f"/carrier/{carriers[0][0]}/preferences" if carriers else "/"
+    return RedirectResponse(target, status_code=303)
+
+
+@app.get("/carrier/{carrier_id}/preferences", response_class=HTMLResponse)
+async def preferences(carrier_id: str, saved: str = "") -> HTMLResponse:
+    banner = (f'<div class="banner ok"><b>Saved</b>Version {escape(saved)} is live. '
+              "Your agent uses it from its next quote.</div>") if saved else ""
+    return await _prefs_page(carrier_id, banner=banner)
+
+
+@app.post("/carrier/{carrier_id}/preferences", response_class=HTMLResponse, response_model=None)
+async def save_preferences(carrier_id: str, request: Request) -> HTMLResponse | RedirectResponse:
+    pool = await get_pool()
+    stored = await load_policy(pool, carrier_id)
+    if stored is None:
+        return await _prefs_page(carrier_id)
+    form = {k: v for k, v in (await request.form()).items() if isinstance(v, str)}
+    prefs, errors = _form_to_prefs(form, stored.preferences())
+
+    if form.get("preset"):  # a goal button: fill the fields, do not save yet
+        try:
+            prefs = apply_preset(prefs if not errors else stored.preferences(), form["preset"])
+        except PreferencesInvalid as invalid:
+            errors.update(invalid.errors)
+        banner = ('<div class="banner warn"><b>Preset applied, not saved</b>'
+                  "Review the numbers, then save.</div>")
+        return await _prefs_page(carrier_id, prefs, errors, banner)
+
+    if errors:
+        return await _prefs_page(carrier_id, prefs, errors)
+    try:
+        expected = int(form.get("expected_version", "0"))
+        saved = await save_policy(pool, carrier_id, prefs, expected_version=expected,
+                                  actor_id=f"operator:{carrier_id}")
+    except PreferencesInvalid as invalid:
+        shown = {_ERROR_KEY.get(k, k): v for k, v in invalid.errors.items()}
+        return await _prefs_page(carrier_id, prefs, shown)
+    except VersionConflict:
+        banner = ('<div class="banner err"><b>Someone else saved first</b>'
+                  "These are the latest settings. Make your change again.</div>")
+        return await _prefs_page(carrier_id, banner=banner)
+    return RedirectResponse(f"/carrier/{carrier_id}/preferences?saved={saved.version}", status_code=303)
 
 
 def main() -> None:

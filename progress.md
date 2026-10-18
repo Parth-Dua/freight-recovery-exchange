@@ -314,3 +314,9 @@
 - Tests / evidence: docs only; no code or tests changed.
 - NEEDS-FROM-PARTH: agree the handoffs in section 13 (session columns, `market_events` negotiation event names, new `carrier_policies` keys); confirm the 03:00 takeover check.
 - Next: card test, then the carrier dashboard.
+
+### 2026-10-18 — [Tisya] Carrier dashboard: pricing agent preferences (branch tisya/carrier-dashboard)
+- Done: `console/carrier_console/preferences.py` + routes `/carrier/{id}/preferences` (GET/POST). Reads and saves `carrier_policies.policy` with validation, business goal presets (fill the ship, balanced, protect margin), optimistic version check (a stale form cannot overwrite a newer save), and a `CARRIER_POLICY_UPDATED` market event that names changed fields only, never values. Unknown keys are preserved; the legacy `concession_pct` is kept as the half-full midpoint for carrier code that reads one value. `design/dashboard-design-brief.md` for the Paper design agent. Design doc: cards moved to Parth end to end.
+- Tests / evidence: console unit 34 passed (10 new). Live, local TimescaleDB: 3 new preference tests passed (version bump, field names only in the event, stale form rejected, unchanged save is a no-op), each restoring Atlas's policy. Page smoke test on a local server: GET 200, preset fills without saving, floor above target shows a field error.
+- NEEDS-FROM-PARTH: carrier agents should read the new keys `concession_empty_pct`, `concession_full_pct`, `disruption_surge_pct`, `business_goal` (design doc section 9). Until then they keep using `concession_pct`.
+- Next: style the dashboard to the Paper design; map and analytics; risk page.
