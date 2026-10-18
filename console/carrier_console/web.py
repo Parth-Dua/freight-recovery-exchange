@@ -12,6 +12,7 @@ Run:  cd console && uv run uvicorn carrier_console.web:app --host 127.0.0.1 --po
 
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from html import escape
 from pathlib import Path
@@ -22,9 +23,10 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from carrier_console import ui
+from carrier_console import market_view, ui
 from carrier_console.config import console_port, load_env
 from carrier_console.db import close_pools, get_pool
+from carrier_console.market import load_snapshot, sample_snapshot
 from carrier_console.preferences import (
     PRESETS,
     Preferences,
@@ -614,6 +616,44 @@ async def save_pricing(carrier_id: str, request: Request) -> HTMLResponse | Redi
         banner = ui.notification("error", "Someone else saved first", "These are the latest settings. Make your change again.")
         return await _pricing_page(carrier_id, banner=banner)
     return RedirectResponse(f"/carrier/{carrier_id}/pricing?saved={saved.version}", status_code=303)
+
+
+# --- Market view (read-only, for the demo) ---------------------------------------------------
+
+def xray_allowed(sample: bool) -> bool:
+    """X-ray reveals private limits. Always on for the labelled sample; for live data only when the
+    console was started with MARKET_XRAY=1, so it cannot be left on by accident."""
+    return sample or os.getenv("MARKET_XRAY") == "1"
+
+
+@app.get("/market", response_class=HTMLResponse)
+async def market(step: str = "negotiation", session: str = "", xray: str = "", sample: str = "",
+                 run: str = "") -> HTMLResponse:
+    use_sample = sample == "1"
+    allowed = xray_allowed(use_sample)
+    show_xray = allowed and xray == "1"
+    params = {"step": step, "session": session, "xray": "1" if show_xray else "", "sample": sample, "run": run}
+
+    def link(**change: str) -> str:
+        merged = {**params, **change}
+        return "/market?" + urlencode({k: v for k, v in merged.items() if v})
+
+    snap = sample_snapshot() if use_sample else await load_snapshot(await get_pool(), run or None, xray=show_xray)
+    if snap is None:
+        body = ui.notification("info", "No recovery has run yet",
+                               'Withdraw a sailing in the carrier console and this view fills in. '
+                               '<a class="cds--link" href="/market?sample=1">See the sample story</a>.')
+        return HTMLResponse(market_view.market_shell(body, snap=None, step=step, xray=False, xray_allowed=False,
+                                                     params=params))
+    if step == "disruption":
+        body = market_view.disruption(snap)
+    elif step == "allocation":
+        body = market_view.allocation(snap)
+    else:
+        step = "negotiation"
+        body = market_view.negotiation(snap, snap.session(session or None), show_xray, link)
+    return HTMLResponse(market_view.market_shell(body, snap=snap, step=step, xray=show_xray, xray_allowed=allowed,
+                                                 params=params))
 
 
 def main() -> None:

@@ -379,3 +379,8 @@
 - Bug: read-only cards were sent with requires_card_interaction="false"; ASI:One renders a card only when it is
   "true", so they showed as plain text (recovery transcript, cancellation alert, receipts). Now always "true",
   read-only cards keep is_terminal. Needs a live ASI:One look.
+
+### 2026-10-18 — [Tisya] Market view with X-ray (branch tisya/carrier-dashboard)
+- Done: `/market` in the console (Carbon), three steps: Disruption (withdrawn sailing, stranded containers, who was paired with whom and why), Negotiation (buyer-to-carrier session lines by state, the selected session's agent messages), Allocation (first come, first served vs exchange, where each booking went and its status). Built from one `MarketSnapshot` (`console/carrier_console/market.py`): `load_snapshot` reads the latest `recovery_runs` (stranded snapshot + baseline), `negotiation_sessions`/`negotiation_messages` (recovery kind), `recovery_legs` (latest attempt) and carrier names; `sample_snapshot()` is the demo story, labelled "Sample story" on screen (`/market?sample=1`). X-ray (`&xray=1`): the carrier's floor and the buyer's max (original + pre-approved, per container) on a price track with the deal zone, plus "outside limits, needs OK" when max < floor. For live data X-ray works only when the console starts with `MARKET_XRAY=1`.
+- Evidence: console unit 39 passed (6 new). Sample renders in a local browser for all three steps and X-ray. The live loader runs against the local DB (no recovery run there, so it shows the empty state); NOT yet checked against a real recovery run.
+- NEEDS-FROM-PARTH: run one recovery (`demo.py rehearse --runs 1` or the live flow) on a DB the console can read, then open `/market` to confirm the live snapshot.

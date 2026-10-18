@@ -89,6 +89,7 @@ def shell(title: str, body: str, *, active: str, carrier_id: str, carriers: list
   <nav class="cds--header__nav" aria-label="Carrier console"><ul class="cds--header__menu-bar">{items}</ul></nav>
   <div class="cds--header__global">
     <label for="carrier" class="cds--visually-hidden">Carrier</label>
+    <a class="cds--link" href="/market" style="margin-right: 24px;">Market view ↗</a>
     <select id="carrier" class="switcher" onchange="location.href='/carrier/'+this.value+'/{escape(active)}'">{options}</select>
   </div>
 </header>
