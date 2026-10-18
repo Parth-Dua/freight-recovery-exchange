@@ -5,6 +5,15 @@ Not ACP or Tiger evidence. The live run is scripts/recovery_smoke.py.
 
 import asyncio
 from dataclasses import replace
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def one_shot_recovery_path(monkeypatch):
+    """These unit tests cover the one-shot recovery round (v2 rollback path); the negotiated path needs
+    Tiger and is evidenced live (progress.md)."""
+    monkeypatch.setenv("RECOVERY_NEGOTIATION_ENABLED", "false")
 from datetime import datetime, timedelta, timezone
 
 from freight_allocation import SolverAllocationSeam, StaticCapacity

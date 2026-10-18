@@ -99,6 +99,18 @@ class Transport(Protocol):
         """Return (reply payload JSON, resolution label) or raise TransportError."""
 
 
+_CARRIER_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _carrier_lock(address: str) -> asyncio.Lock:
+    """One in-flight sync query per carrier: uAgents sync replies are matched per agent pair, so two
+    concurrent queries to the same carrier can cross. Different carriers still run in parallel."""
+    lock = _CARRIER_LOCKS.get(address)
+    if lock is None:
+        lock = _CARRIER_LOCKS[address] = asyncio.Lock()
+    return lock
+
+
 class UAgentsSyncTransport:
     """uAgents sync request/reply using only uagents-core (no full uagents dependency)."""
 
@@ -116,6 +128,12 @@ class UAgentsSyncTransport:
         raise TransportError(ErrorCode.CARRIER_UNREACHABLE, "no endpoint in Almanac or registry")
 
     async def request(
+        self, carrier: CarrierRef, message: Model, sender: Identity, timeout_s: float
+    ) -> tuple[str, str]:
+        async with _carrier_lock(carrier.agent_address):
+            return await self._request(carrier, message, sender, timeout_s)
+
+    async def _request(
         self, carrier: CarrierRef, message: Model, sender: Identity, timeout_s: float
     ) -> tuple[str, str]:
         endpoint, resolution = await self.resolve(carrier)

@@ -142,6 +142,7 @@ class Session:
     current: OfferTerms | None = None
     trace: list[str] = field(default_factory=list)
     reason: str = ""
+    booking_id: str | None = None  # recovery sessions: the displaced booking this session is for
 
 
 @dataclass
@@ -181,6 +182,24 @@ class NegotiationService:
         for s in sessions:
             s.request = s.request.copy(update={"negotiation_id": s.session_id})
             await self._open(s, buyer_id, request_id, expires)
+        await self.negotiate_group(sessions, private, cargo.quantity, expires)
+
+        finals = [s for s in sessions if s.current is not None and s.current.expires_at > self.clock()
+                  and (private.max_total_minor is None or s.current.total_price_minor <= private.max_total_minor)]
+        if finals:
+            fastest = min(s.current.arrival_at for s in finals)
+            finals.sort(key=lambda s: rank_key(Quote(s.current.total_price_minor, s.current.arrival_at),
+                                               s.current.offer_id, fastest, private, cargo.quantity))
+        await self.repo.set_display_ranks(request_id, [s.current.offer_id for s in finals])
+        await self.repo.finish_request(request_id, correlation, len(finals))
+        log_event("negotiation_done", request_id=request_id, paired=len(pairs), finals=len(finals),
+                  sessions={s.carrier.carrier_id: s.status for s in sessions})
+        return NegotiationResult(request_id, sessions, finals, len(pairs))
+
+    async def negotiate_group(self, sessions: list[Session], private: BuyerPrivate, quantity: int,
+                              deadline: datetime) -> None:
+        """Opening offers in parallel, then up to two counter rounds; every session ends closed.
+        Sessions in one group are rivals of each other (same buyer request / same displaced booking)."""
         exchange = self.client.identity.address
 
         async def opening(s: Session) -> None:
@@ -197,28 +216,16 @@ class NegotiationService:
             live = [s for s in sessions if s.status == "OPEN" and s.current is not None]
             if not live:
                 break
-            if self.clock() >= expires:
+            if self.clock() >= deadline:
                 for s in live:
-                    await self._close(s, "EXPIRED", "negotiation deadline reached")
+                    await self._close(s, "EXPIRED", "negotiation deadline reached", keep_offer=False)
                 break
-            await asyncio.gather(*(self._counter_round(s, sessions, private, round_number, cargo.quantity, exchange)
+            await asyncio.gather(*(self._counter_round(s, sessions, private, round_number, quantity, exchange)
                                    for s in live))
         for s in sessions:
             if s.status == "OPEN":
                 await self._close(s, "EXHAUSTED" if s.round >= ROUNDS_MAX else "ACCEPTED",
                                   "two counters used" if s.round >= ROUNDS_MAX else "buyer agent accepted this offer")
-
-        finals = [s for s in sessions if s.current is not None and s.current.expires_at > self.clock()
-                  and (private.max_total_minor is None or s.current.total_price_minor <= private.max_total_minor)]
-        if finals:
-            fastest = min(s.current.arrival_at for s in finals)
-            finals.sort(key=lambda s: rank_key(Quote(s.current.total_price_minor, s.current.arrival_at),
-                                               s.current.offer_id, fastest, private, cargo.quantity))
-        await self.repo.set_display_ranks(request_id, [s.current.offer_id for s in finals])
-        await self.repo.finish_request(request_id, correlation, len(finals))
-        log_event("negotiation_done", request_id=request_id, paired=len(pairs), finals=len(finals),
-                  sessions={s.carrier.carrier_id: s.status for s in sessions})
-        return NegotiationResult(request_id, sessions, finals, len(pairs))
 
     async def _opening_outcome(self, s: Session, out: CarrierOutcome) -> None:
         if out.offer is not None:
@@ -272,18 +279,23 @@ class NegotiationService:
                                 out.reply.message_id if out.reply is not None else f"local_{uuid4().hex}", round_number,
                                 getattr(out.reply, "message_type", "EXCHANGE_ERROR"),
                                 {"offer_id": s.current.offer_id, "outcome": out.kind}, "OFFER_REJECTED")
-            await self._close(s, "REJECTED", "carrier refused the counter; its previous offer stands")
+            await self._close(s, "EXHAUSTED" if round_number >= ROUNDS_MAX else "REJECTED",
+                              "carrier refused the counter; its previous offer stands")
 
     # ---- persistence (guarded transitions + public trace) ---------------------------------
-    async def _open(self, s: Session, buyer_id: str, request_id: str, expires: datetime) -> None:
+    async def _open(self, s: Session, buyer_id: str, request_id: str, expires: datetime, *, kind: str = "booking",
+                    recovery_id: str | None = None) -> None:
         async with self.repo.pool.connection() as conn, conn.transaction():
             await conn.execute(
                 """INSERT INTO negotiation_sessions (session_id, buyer_agent_key, carrier_id, carrier_agent_address,
-                       request_id, kind, rounds_max, expires_at) VALUES (%s, %s, %s, %s, %s, 'booking', %s, %s)""",
+                       request_id, booking_id, recovery_id, kind, rounds_max, expires_at)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (s.session_id, f"buyer:{buyer_id}", s.carrier.carrier_id, s.carrier.agent_address, request_id,
-                 ROUNDS_MAX, expires))
+                 s.booking_id, recovery_id, kind, ROUNDS_MAX, expires))
             await _event(conn, "NEGOTIATION_OPENED", "negotiation", s.session_id, correlation_id=s.session_id,
-                         carrier_id=s.carrier.carrier_id, payload={"request_id": request_id, "rounds_max": ROUNDS_MAX})
+                         carrier_id=s.carrier.carrier_id,
+                         payload={"kind": kind, "request_id": request_id, "booking_id": s.booking_id,
+                                  "recovery_id": recovery_id, "rounds_max": ROUNDS_MAX})
 
     async def _advance(self, s: Session, round_number: int) -> bool:
         async with self.repo.pool.connection() as conn:
@@ -296,8 +308,10 @@ class NegotiationService:
         s.round = round_number
         return True
 
-    async def _close(self, s: Session, status: str, reason: str) -> None:
+    async def _close(self, s: Session, status: str, reason: str, *, keep_offer: bool = True) -> None:
         s.status, s.reason = status, reason
+        if not keep_offer:  # an expired session never yields a final offer
+            s.current = None
         async with self.repo.pool.connection() as conn, conn.transaction():
             await conn.execute(
                 """UPDATE negotiation_sessions SET status = %s, reason = %s, closed_at = now(), final_offer_id = %s,

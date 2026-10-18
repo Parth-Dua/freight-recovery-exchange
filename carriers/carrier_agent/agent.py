@@ -255,7 +255,7 @@ def build_carrier_agent(
             sailings = await inventory.sailings_for(msg.cargo)
 
             def decide_fn(cargo, at):
-                result = decide(cargo, sailings, policy, at)
+                result = decide(cargo, sailings, policy, at, recovery=msg.kind == "recovery")
                 return result if isinstance(result, Decline) else (result, policy)
 
             kind, fields = build_reply(

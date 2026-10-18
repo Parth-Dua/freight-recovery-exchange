@@ -14,11 +14,14 @@ Rules (docs/specs/06-joint-recovery-allocation.md)
     - never late, never an expired or foreign-currency offer, only offers made for b
     - price over the approved extra cost is allowed but marks a[b] for approval
 
-Objective, solved in order, each stage locking in the one before
-    1. most bookings fully recovered
-    2. fewest bookings needing approval
-    3. lowest total cost
-    4. earliest arrival (tie-break), then a fixed single-worker seed for any rest
+Objective (v2, SOLVER-1), five strict CP-SAT solves, each fixing the previous optimum as an equality
+    1. most must-deliver bookings fully recovered (buyer-declared priority, never an authority override)
+    2. most bookings fully recovered
+    3. fewest bookings needing approval
+    4. lowest total incremental simulated freight cost: sum over recovered b of (new cost - original
+       price); signed, so savings offset increases (approval still depends on increases only)
+    5. earliest arrival: units-weighted arrival rank of the chosen offers (rank ties broken by offer id),
+       then a fixed single-worker seed for anything left
 
 The model is built from inputs sorted by id, so the result never depends on the order
 the inputs arrive in.
@@ -97,7 +100,8 @@ def solve(
     bookings = sorted(stranded, key=lambda b: b.booking_id)
     offer_list = sorted(offers, key=lambda o: o.offer_id)
     if not bookings:
-        return Solution((), (), (), (), {}, {"recovered": 0, "approvals": 0, "cost_minor": 0})
+        return Solution((), (), (), (), {}, {"must_deliver": 0, "recovered": 0, "approvals": 0,
+                                             "incremental_cost_minor": 0, "arrival_rank": 0})
 
     model = cp_model.CpModel()
     placed: dict[tuple[str, str], cp_model.LinearExprT] = {}
@@ -150,10 +154,13 @@ def solve(
         offer.offer_id: rank
         for rank, offer in enumerate(sorted(offer_list, key=lambda o: (o.arrival_at, o.offer_id)))
     }
+    by_id = {b.booking_id: b for b in bookings}
     stages = [
+        ("must_deliver", sum((recovered[b] for b in recovered if by_id[b].must_deliver), 0), True),
         ("recovered", sum(recovered.values(), 0), True),
         ("approvals", sum(approval.values(), 0), False),
-        ("cost_minor", sum(cost.values(), 0), False),
+        ("incremental_cost_minor",
+         sum((cost[b] - by_id[b].original_price_minor * recovered[b] for b in recovered), 0), False),
         ("arrival_rank", sum((arrival_rank[o] * e for (_, o), e in placed.items()), 0), False),
     ]
 

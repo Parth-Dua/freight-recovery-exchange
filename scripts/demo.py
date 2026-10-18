@@ -100,6 +100,52 @@ async def seed(repo, extra: list[dict] | None = None) -> list[dict]:
     return made
 
 
+V2_FIXTURE = [  # PRD 9 / spec 05 6, on the seeded market (anchor = tomorrow 00:00 UTC)
+    {"buyer": "demo_buyer_a", "sailing": "ATL-101", "qty": 2, "split": False, "deadline_days": 6.99,
+     "priority": "fastest", "must_deliver": False, "allowance": 100000},
+    {"buyer": "demo_buyer_b", "sailing": "ATL-101", "qty": 1, "split": False, "deadline_days": 3.5,
+     "priority": "balanced", "must_deliver": True, "allowance": 50000},
+    {"buyer": "demo_buyer_c", "sailing": "ATL-101", "qty": 1, "split": False, "deadline_days": 3.5,
+     "priority": "balanced", "must_deliver": False, "allowance": 0},
+    {"buyer": "demo_buyer_d", "sailing": "ATL-102", "qty": 1, "split": False, "deadline_days": 8,
+     "priority": "balanced", "must_deliver": False, "allowance": 0},
+]
+
+
+async def seed_v2(repo) -> dict[str, str]:
+    """A, B (must-deliver), C (zero allowance) on ATL-101 + unaffected D, through the console's preseed
+    service; then the buyers' private settings (deadline, priority, must-deliver, allowance)."""
+    await guard_demo_database(repo)
+    out = sh("uv", "run", "--directory", "console", "python", "-c", PRESEED,
+             json.dumps([{k: f[k] for k in ("buyer", "sailing", "qty", "split")} for f in V2_FIXTURE]))
+    made = {m["buyer"]: m["booking_id"] for m in (json.loads(x) for x in out.splitlines() if x.startswith("{"))}
+    async with repo.pool.connection() as conn:
+        anchor = (await (await conn.execute("SELECT min(departure_at)::date FROM sailings")).fetchone())[0]
+        for f in V2_FIXTURE:
+            bid = made[f["buyer"]]
+            await conn.execute(
+                """UPDATE cargo_requests r SET latest_arrival = %s::date + make_interval(secs => %s), priority = %s,
+                       must_deliver = %s FROM bookings b WHERE b.booking_id = %s AND r.request_id = b.request_id""",
+                (anchor, int(f["deadline_days"] * 86400), f["priority"], f["must_deliver"], bid))
+            await conn.execute("UPDATE bookings SET must_deliver = %s, max_additional_cost_minor = %s WHERE booking_id = %s",
+                               (f["must_deliver"], f["allowance"], bid))
+            print(f"  {bid}  {f['buyer']:>13}  {f['sailing']}  {f['qty']}x  priority={f['priority']}  "
+                  f"must_deliver={f['must_deliver']}  allowance=${f['allowance'] // 100}")
+    return made
+
+
+async def approve(repo, booking_id: str, decision: str = "approve") -> None:
+    """Stand-in for a preseeded buyer's reply (they have no ASI:One chat): records the decision through the
+    same approval handler the gateway uses, as that booking's own buyer. Real buyers use the approval card."""
+    from freight_exchange.asi.approvals import TigerApprovalStore, handle_approval_reply
+    async with repo.pool.connection() as conn:
+        row = await (await conn.execute("SELECT buyer_id FROM bookings WHERE booking_id = %s", (booking_id,))).fetchone()
+    if row is None:
+        raise SystemExit(f"no booking {booking_id}")
+    result = await handle_approval_reply(TigerApprovalStore(repo.pool), row[0], f"{decision} {booking_id}")
+    print(f"[stand-in for {row[0]}] {decision} {booking_id}: {result.status if result else 'not an approval'}")
+
+
 async def withdraw(repo, sailing_id: str) -> None:
     from freight_disruption import TigerDisruptionSeam
     owner = await repo.sailing_owner(sailing_id)
@@ -196,6 +242,16 @@ async def evidence(repo) -> None:
          "SELECT event_id, carrier_id, sailing_id, source_kind, reason_risk_event_id, left(reason, 60) FROM disruption_events"),
         ("Recovery runs (OR-Tools input_version = solver decision fingerprint)",
          "SELECT recovery_id, sailing_id, status, attempts, input_version FROM recovery_runs ORDER BY created_at"),
+        ("Negotiation sessions (booking + recovery; final terms only, never floors or budgets)",
+         """SELECT kind, coalesce(booking_id, request_id), carrier_id, status, round, final_total_minor, reason
+            FROM negotiation_sessions ORDER BY opened_at"""),
+        ("Clearing: five-stage objective vs first-come-first-served baseline (simulated, never executed)",
+         """SELECT entity_id, payload->'objective', payload->'baseline'->>'recovered',
+                   payload->'baseline'->>'baseline_kind', payload->'negotiation'->>'negotiation_seconds'
+            FROM market_events WHERE event_type = 'CLEARING_DONE' ORDER BY ts"""),
+        ("Fetch FET testnet fees (Payment Protocol; tx verified on-chain)",
+         """SELECT reference, status, funds_amount, funds_currency, left(provider_tx_id, 16), buyer_wallet, booking_id
+            FROM payment_records WHERE provider = 'fetch' ORDER BY created_at"""),
         ("Recovery legs (holds -> confirmations)",
          """SELECT recovery_id, booking_id, sailing_id, quantity, quoted_price_minor, needs_approval, status, hold_id,
                    replacement_booking_id FROM recovery_legs ORDER BY recovery_id, booking_id"""),
@@ -251,6 +307,10 @@ async def main(args) -> int:
             await reset(repo, args.anchor)
         elif args.cmd == "seed":
             await seed(repo)
+        elif args.cmd == "seed-v2":
+            await seed_v2(repo)
+        elif args.cmd == "approve":
+            await approve(repo, args.booking_id, "decline" if args.decline else "approve")
         elif args.cmd == "withdraw":
             await withdraw(repo, args.sailing_id)
         elif args.cmd == "recover":
@@ -271,6 +331,10 @@ if __name__ == "__main__":
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("reset").add_argument("--anchor")
     sub.add_parser("seed")
+    sub.add_parser("seed-v2")
+    ap = sub.add_parser("approve")
+    ap.add_argument("booking_id")
+    ap.add_argument("--decline", action="store_true")
     sub.add_parser("withdraw").add_argument("sailing_id")
     sub.add_parser("recover").add_argument("--no-notify", action="store_true")
     sub.add_parser("audit")

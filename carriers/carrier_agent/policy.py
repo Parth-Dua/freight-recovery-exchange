@@ -126,7 +126,8 @@ def unit_price_minor(policy: Policy, sailing: SailingInventory) -> int:
     return opening_unit_minor(policy, sailing)
 
 
-def decide(cargo: CargoSpec, sailings: list[SailingInventory], policy: Policy, now: datetime) -> Quote | Decline:
+def decide(cargo: CargoSpec, sailings: list[SailingInventory], policy: Policy, now: datetime, *,
+           recovery: bool = False) -> Quote | Decline:
     if cargo.container_type not in SUPPORTED_CONTAINER_TYPES:
         return Decline(RejectReason.UNSUPPORTED_CONTAINER_TYPE, f"{cargo.container_type} not offered")
     if cargo.currency != policy.currency:
@@ -160,7 +161,7 @@ def decide(cargo: CargoSpec, sailings: list[SailingInventory], policy: Policy, n
         else (lambda s: (s.arrival_at, s.sailing_id))
     sailing = min(candidates, key=key)
     quantity = quantity_for(sailing)
-    total = opening_unit_minor(policy, sailing, quantity=quantity, cargo_class=cargo_class) * quantity
+    total = opening_unit_minor(policy, sailing, quantity=quantity, cargo_class=cargo_class, recovery=recovery) * quantity
 
     if cargo.max_total_price_minor is not None and total > cargo.max_total_price_minor:
         floor_total = policy.min_price_per_unit_minor * quantity

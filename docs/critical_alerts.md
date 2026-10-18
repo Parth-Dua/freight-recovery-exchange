@@ -2,50 +2,49 @@
 
 Updated as the v2 phases (`docs/specs_2/`) progress. Only things that need **you** are here.
 
-## Status (2026-10-18 00:50 PDT)
+## Status (2026-10-18 01:20 PDT) — all five phases built and verified without ASI:One
 
-| Phase | Built + tested locally | Live ASI:One check (you) |
+| Phase | Built + verified (live carriers / Tiger / testnet) | Live ASI:One check (you) |
 |---|---|---|
-| 1 — uAgent gateway | ✅ both protocol manifests published | ⏳ **blocked on mailbox connect (alert 1)** |
-| 2 — Interactive Cards (form → carousel → review → receipt; recovery cards) | ✅ full journey vs live carriers | ⏳ |
-| 3 — Fetch FET testnet fee | ✅ real testnet transfers verified on-chain, paid bookings confirmed | ⏳ needs ASI:One wallet (alert 2) |
-| 4 — Two-sided negotiation (≤2 counters/carrier, private strategies) | ✅ live carriers + real testnet paid booking | ⏳ |
-| 5 — Recovery clearing + release | in progress | — |
+| 1 — uAgent gateway | ✅ Chat + Payment manifests published | ⏳ **blocked on mailbox connect (alert 1)** |
+| 2 — Interactive Cards | ✅ form → carousel → review → receipt; recovery cards | ⏳ |
+| 3 — Fetch FET testnet fee | ✅ real testnet transfers verified on-chain; paid bookings confirmed | ⏳ needs ASI:One wallet (alert 2) |
+| 4 — Two-sided negotiation | ✅ 4 carrier agents, ≤2 counters, private policies | ⏳ |
+| 5 — Recovery negotiation + 5-stage clearing | ✅ 3/3 recovered incl. must-deliver, approvals, confirmations | ⏳ push cards in a live chat |
 
-## Needs you
+## Needs you (in this order)
 
 1. **Connect the gateway's Agentverse mailbox (one time, ~30 s) — blocks every live ASI:One test.**
-   Open this link and click **Connect → Mailbox**:
-   https://agentverse.ai/inspect/?uri=http%3A//127.0.0.1%3A8110&address=agent1q0ktnrhtmerdle6tz9lmdj9v7c0vzrtnl8wdvuthj88cj9ydp7j3vmymxm8
-   (or add `AGENTVERSE_API_KEY=` to `.env` and restart the gateway; it connects itself). `logs/gateway.log`
-   stops saying "Agent mailbox not found" once it works. Then, in Agentverse, give the agent a handle
-   (e.g. `hormuz-exchange`).
-2. **ASI:One testnet FET wallet.** To pay the 0.1 testnet FET fee from ASI:One you need its wallet on the
-   Fetch **testnet** with a little test FET (official faucet; never mainnet). Phase 3's gate depends on
-   ASI:One sending `CommitPayment` with `buyer_fet_wallet` metadata — if ASI:One doesn't show a FET payment
-   step, tell me (write it here) and I'll document it as the blocker.
+   Open https://agentverse.ai/inspect/?uri=http%3A//127.0.0.1%3A8110&address=agent1q0ktnrhtmerdle6tz9lmdj9v7c0vzrtnl8wdvuthj88cj9ydp7j3vmymxm8
+   and click **Connect → Mailbox** (or add `AGENTVERSE_API_KEY=` to `.env` and restart). Then in Agentverse
+   give the agent a handle (e.g. `hormuz-exchange`) and check its profile shows the README.
+2. **ASI:One testnet FET wallet** with a little test FET (official Fetch faucet; never mainnet). If ASI:One
+   shows no FET payment step or the commit lacks `buyer_fet_wallet`, write that here — it is the documented
+   P0 blocker (PRD §7) and I will record it.
+3. **Submission (only you can):** Devpost + ASI:One Submission Agent, a 3–5 min video, and a shared ASI:One
+   chat URL. README already has the badges, agent addresses and setup.
 
-## How to test right now
+## Test it (≈5 min)
 
-Start everything: `./scripts/run_demo.sh` (or the services already running). Gateway address:
+Services: `./scripts/run_demo.sh` (already running from my session). Gateway:
 `agent1q0ktnrhtmerdle6tz9lmdj9v7c0vzrtnl8wdvuthj88cj9ydp7j3vmymxm8`.
 
-In ASI:One, open a **new chat with the gateway agent** and:
+**A. Book (ASI:One, new chat with the gateway):**
+1. `I need to ship cargo` → form card. Jebel Ali → Mumbai, 2 containers, arrive-by 3–4 days out,
+   auto-rebook limit e.g. 300. Submit.
+2. ~20–40 s later an offers **carousel** (with each carrier's negotiation trace) appears. Choose one.
+3. **Review** card → **Confirm and pay** → approve the **0.1 testnet FET** payment → **receipt** card.
 
-1. `I need to ship cargo` → a **form card** (origin, destination, containers, arrive-by, ready-from, split,
-   cargo class, private max price, priority, must-deliver, auto-rebook limit). Fill it (Jebel Ali → Mumbai,
-   1–2 containers, a deadline 3–4 days out) and submit.
-2. A text reply says the buyer agent is negotiating; ~15–40 s later an **offers carousel** arrives in the
-   same chat, each offer showing its negotiation trace (opened → countered → final). Click **Choose this offer**.
-3. A **review card** shows simulated freight and the separate 0.1 testnet FET service fee. Click
-   **Confirm and pay**.
-4. ASI:One should show a **payment request** (0.1 testnet FET). Approve it with your testnet wallet.
-5. Expect a **booking confirmed** card (booking ID, claim code, "testnet FET verified on-chain").
+**B. Disrupt + recover (same chat stays open):**
+4. Withdraw your sailing at http://localhost:8800 (or `uv run python scripts/demo.py withdraw <SAILING>`).
+5. Within ~1 min: a **disruption** card, then either a **Rebooked** card or an **approval** card (approve it)
+   followed by **Rebooked**. Other buyers on that sailing are recovered in the same joint clearing.
 
-Other checks: `notify test` (background push), `payment test` (please **reject** — smoke only),
-`What corridors do you support?` (text fallback).
+**Reproduce the scripted recovery scenario (no ASI:One needed):**
+`uv run python scripts/demo.py reset && uv run python scripts/demo.py seed-v2 && uv run python scripts/demo.py withdraw ATL-101`,
+then watch `logs/recovery_worker.log`; `uv run python scripts/demo.py evidence` shows sessions, clearing vs
+baseline, holds and lineage. Buyers B and C go to AWAITING_APPROVAL (replacement above their allowance);
+approve as them with `uv run python scripts/demo.py approve <BOOKING_ID>` (IDs are in the worker log /
+evidence); the worker confirms within seconds → COMPLETED.
 
-Already proven without ASI:One (scripts you can re-run):
-- `uv run python scripts/card_flow_smoke.py` — whole card journey via the internal API (+ replay/stale/other-buyer refusals).
-- `uv run --project gateway python scripts/fet_booking_smoke.py` — real testnet fee → on-chain proof →
-  carrier-confirmed booking; replayed commit idempotent; reused tx refused.
+Smoke tests: `uv run python scripts/card_flow_smoke.py`, `uv run --project gateway python scripts/fet_booking_smoke.py`.

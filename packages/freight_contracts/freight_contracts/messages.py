@@ -121,6 +121,7 @@ class RequestOffer(_Envelope):
     message_type: Literal["REQUEST_OFFER"] = "REQUEST_OFFER"
     expires_at: datetime
     cargo: CargoSpec
+    kind: Literal["booking", "recovery"] = "booking"  # v2: recovery requests are priced with the carrier's surge
 
     @validator("expires_at", allow_reuse=True)
     def _utc_expires(cls, value):

@@ -36,6 +36,8 @@ class StrandedRow:
     total_price_minor: int
     currency: str
     max_additional_cost_minor: int
+    must_deliver: bool = False
+    priority: str = "balanced"
 
 
 @dataclass(frozen=True)
@@ -63,6 +65,8 @@ def to_disrupted_booking(row: StrandedRow) -> DisruptedBooking:
         original_price_minor=row.total_price_minor,
         currency=row.currency,
         max_additional_cost_minor=row.max_additional_cost_minor,
+        must_deliver=row.must_deliver,
+        priority=row.priority,
     )
 
 
@@ -73,7 +77,8 @@ SELECT b.booking_id, b.buyer_id, b.carrier_id, b.sailing_id,
        s.origin_port, s.destination_port,
        r.latest_arrival, r.allow_split,
        b.total_price_minor, b.currency,
-       b.max_additional_cost_minor
+       b.max_additional_cost_minor,
+       (b.must_deliver OR r.must_deliver), r.priority
 FROM bookings b
 JOIN offers o ON o.offer_id = b.offer_id
 JOIN cargo_requests r ON r.request_id = b.request_id

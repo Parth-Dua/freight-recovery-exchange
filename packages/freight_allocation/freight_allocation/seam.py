@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from freight_seams import DisruptedBooking, RecoveryOffer, RecoveryProposal
+from freight_allocation.baseline import first_come_first_served
 from freight_allocation.capacity import CapacityReader
 from freight_allocation.explain import explain
 from freight_allocation.model import solve, validate_inputs
@@ -42,9 +43,11 @@ class SolverAllocationSeam:
     production, StaticCapacity in tests. `clock` decides which offers have expired.
     """
 
-    def __init__(self, capacity: CapacityReader, clock: Callable[[], datetime] = utcnow) -> None:
+    def __init__(self, capacity: CapacityReader, clock: Callable[[], datetime] = utcnow,
+                 posting_order: dict[str, int] | None = None) -> None:
         self._capacity = capacity
         self._clock = clock
+        self._posting_order = posting_order  # disrupted-booking posting sequence for the FCFS baseline
 
     async def allocate(
         self,
@@ -60,6 +63,7 @@ class SolverAllocationSeam:
         as_of = self._clock()
 
         solution = solve(stranded, offers, checks, as_of)
+        baseline = first_come_first_served(stranded, offers, checks, as_of, self._posting_order)
         return RecoveryProposal(
             recovery_run_id=recovery_run_id,
             assignments=solution.assignments,
@@ -68,4 +72,6 @@ class SolverAllocationSeam:
             explanations=explain(stranded, offers, checks, solution, as_of),
             verified_capacity={offer_id: check.trusted for offer_id, check in checks.items()},
             input_version=input_version(stranded, offers, sellable),
+            objective=dict(solution.objective),
+            baseline=baseline,
         )
