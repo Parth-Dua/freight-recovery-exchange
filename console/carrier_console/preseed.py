@@ -34,6 +34,11 @@ from psycopg_pool import AsyncConnectionPool
 from carrier_console.db import SOURCE, emit_event
 
 PRESEED_SIGNATURE = "PRESEED_NOT_A_VERIFIED_CARRIER_SIGNATURE"
+
+# How late a preseeded buyer will accept a replacement, measured from their original
+# arrival. Without slack, every later sailing would be ineligible and no preseeded
+# booking could ever be recovered.
+ARRIVAL_SLACK = timedelta(days=2)
 LIVE_ONLY_BUYERS = {"buyer_a"}
 
 
@@ -126,7 +131,7 @@ async def preseed_booking(
                    max_total_price_minor, currency, allow_split, status, source_kind)
                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'BOOKED', %s)""",
             (request_id, buyer_id, f"flow_{suffix}", origin, destination, container_type,
-             quantity, arrival_at, total_price_minor, currency, allow_split, SOURCE),
+             quantity, arrival_at + ARRIVAL_SLACK, total_price_minor, currency, allow_split, SOURCE),
         )
         await conn.execute(
             """INSERT INTO offers (offer_id, request_id, negotiation_id, correlation_id, message_id,

@@ -14,7 +14,7 @@ side codes against the signature today and swaps in the real thing when it lands
 | Seam | Owner | Real implementation | What the other side may assume today |
 |---|---|---|---|
 | `BookingSeam` | **Parth** | phase 3 + 4 | `FakeBookingSeam`, plus real `COMMITTED` rows from `console/carrier_console/preseed.py` |
-| `DisruptionSeam` | **Tisya** | phase 5 (`console/`) | `FakeDisruptionSeam`, returning the spec 06 WP5 fixture |
+| `DisruptionSeam` | **Tisya** | phase 5, real: `packages/freight_disruption` (`TigerDisruptionSeam`) | `FakeDisruptionSeam`, returning the spec 06 WP5 fixture |
 | `AllocationSeam` | **Tisya** | phase 6 (allocation), real: `packages/freight_allocation` (`SolverAllocationSeam`) | `FakeAllocationSeam`, a greedy stand-in that is **not** the solver |
 | `ApprovalSeam` | **Tisya** | phase 7 WP3 | `FakeApprovalSeam(decision=...)` |
 | `RecoverySeam` | **Parth** | phase 6 (offers) + 7 (commitments) | `FakeRecoverySeam`, which returns a PARTIAL outcome on purpose |

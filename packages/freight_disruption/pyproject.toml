@@ -1,0 +1,22 @@
+[project]
+name = "freight-disruption"
+version = "0.1.0"
+description = "Sailing withdrawal and stranded-booking reads: the real DisruptionSeam (Tisya's lane)"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "freight-seams",
+    "psycopg[binary]>=3.2,<4",
+    "psycopg-pool>=3.2,<4",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<9", "pytest-asyncio>=0.24,<0.25", "python-dotenv>=1.0,<2"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+
+# Non-editable for the same reason as the root project (hidden .pth files on iCloud Macs).
+[tool.uv.sources]
+freight-seams = { path = "../freight_seams", editable = false }
