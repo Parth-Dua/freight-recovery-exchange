@@ -1,7 +1,7 @@
 # Progress — Autonomous Freight Recovery
 
-**Active phase:** [Parth lane] 04 — Booking & Stripe test payments (not started). Phase 03 PASSED.  
-**Phase status:** Phase 01 CLOSED. Phase 02 PASSED. Phase 03 PASSED (AT-03-01..06; ASI:One evidence 2026-10-17). Phase 04 NOT STARTED.  
+**Active phase:** [Parth lane] 06 — one-shot recovery offers over ACP (implemented, unit-tested; live run pending).  
+**Phase status:** Phase 01 CLOSED. Phase 02 PASSED. Phase 03 PASSED (AT-03-01..06; ASI:One evidence 2026-10-17). Phase 04 merged (all AT evidenced except AT-04-05 decline-card half: NEEDS HUMAN VERIFICATION). Phase 06 [Parth half] IN PROGRESS. See dated checkpoints below; the sections under this header are from Phase 1.  
 **Updated:** 2026-10-17  
 **Scope:** Part 1. Part 2 blocked until Phase 8 passes.
 
@@ -175,6 +175,12 @@
 - Demo data note: Tiger holds test bookings BK-0A14FFE2 (agent1qp4livetest) and BK-28C01D37 (main ASI:One account), ATL-101 4/4 COMMITTED. Reset before demo prep.
 - For Tisya: `bookings.max_additional_cost_minor` is live (D5) — `stranded.py` can read it; run `scripts/db.py migrate` on her dev DB (004, 005).
 - Next (Parth lane): AT-04-05 decline test; Phase 6 recovery offers over ACP + recovery trigger on `pending_withdrawals()`; Phase 7 commitments via RecoverySeam.
+
+### 2026-10-17 19:30 — [Parth] Phase 06 recovery offers: implemented, unit-tested (branch parth/phase6-recovery-offers)
+- Done (decision 0007): contracts `REQUEST_RECOVERY_CAPACITY` → `RECOVERY_CAPACITY_OFFERS` | `REJECT_OFFER` | `AGENT_ERROR` (additive; **needs Tisya's OK**). Carriers: `decide_recovery` (own ACTIVE future sailings on the lane except the withdrawn one, on time, fits whole unless split allowed; quote-policy price), signed reply, offers logged `offer_kind='recovery'`, counters on them refused. Exchange: `recovery_client.py` (one request per carrier, parallel, deadline; identity/signature/correlation; per-offer checks vs Tiger sailing record and request), `recovery.py` `AcpRecoverySeam.recover` (claim run per withdrawal → `DisruptionSeam.disrupted_bookings` → round → `AllocationSeam.allocate` → persist → `PROPOSED`; duplicate trigger returns the same run), `RecoveryStore`, `build_recovery_seam` (TigerDisruptionSeam + SolverAllocationSeam/TigerCapacityReader). Migration 006 (recovery_runs columns + status CHECK, `recovery_offers`, `carrier_offer_log.offer_kind`). Root deps + `freight-disruption`, `freight-allocation` (ortools 9.15 resolves with protobuf 6.33). `scripts/recovery_smoke.py <SAILING> [--withdraw]`.
+- Tests (unit only, fakes for transport/store; real OR-Tools solver): root 167 passed (13 new: message checks, AT-06-01 shape A→BEA-201 / B→COV-301, AT-06-06 one request per carrier + no counters, duplicate trigger, timeout + invalid offer → honest partial, overstated claim, no withdrawal / no stranded). Carriers 68 (7 new). Seams 18, disruption 6 (+2 skipped), allocation 52 (+2 skipped), console 16 (+4 skipped) with `TIGER_DATABASE_URL=`. **Not ACP or Tiger evidence.**
+- Blockers / NEEDS: migration 006 must be applied to Parth's Tiger **before** restarting carriers on this branch (carrier `logged_offer` reads `offer_kind`). NEEDS-FROM-TISYA: OK on the contract additions; `stranded.py` still uses `UNSTORED_RECOVERY_ALLOWANCE_MINOR = 0` although `bookings.max_additional_cost_minor` is live. PR #13 (richer market) still open; merge main into this branch after it lands.
+- Next: `uv run python scripts/db.py migrate` → restart carriers from this branch → `uv run python scripts/recovery_smoke.py ATL-101 --withdraw` (needs user OK: withdraws ATL-101 and disrupts BK-0A14FFE2 / BK-28C01D37 on Parth's Tiger) → record live AT-06 evidence.
 
 ## Checkpoint template (append concise updates)
 ### YYYY-MM-DD HH:MM — Phase NN
