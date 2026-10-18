@@ -27,7 +27,8 @@ Before doing anything, read in this order:
 ## Shared resources (parallel work)
 
 - **Tiger:** each person uses their own database. The console withdraws sailings, and
-  `scripts/db.py seed` does not un-withdraw them.
+  `scripts/db.py seed` does not un-withdraw them. Local dev database:
+  `cd console && uv run python scripts/dev_db.py up` (first time) or `reset` (clean slate).
 - **Agent identity:** only one process may run with a given `AGENT_URI` (mailbox mode).
   Use your own throwaway Agentverse agent for experiments.
 

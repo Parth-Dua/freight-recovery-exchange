@@ -1,6 +1,6 @@
 # Coding Agent Rules — Autonomous Freight Recovery
 
-Two builders work in parallel, split by agent boundary. **Parth** owns agent-to-carrier: ACP to the carrier uAgents, Almanac, policy, Tiger, the solver, payments. **Tisya** owns agent-to-human: the ASI:One boundary, cards, discovery, approvals, the carrier console and the demo. Folder ownership and the git workflow are in `OWNERSHIP.md`. Everything one lane needs from the other goes through `packages/freight_seams/`.
+Two builders work in parallel. **Parth** talks to the carriers and makes bookings real: ACP to the carrier uAgents, Almanac, policy, quoting, holds and payment, recovery offers over ACP, reserving and confirming replacements, Tiger. **Tisya** owns the ASI:One side and the recovery decision: discovery, buyer identity, cards, approvals, sailing withdrawal and the carrier console, checking carrier claims, the OR-Tools allocation, and the demo. The step-by-step recovery split is in `OWNERSHIP.md`. Folder ownership and the git workflow are in `OWNERSHIP.md`. Everything one lane needs from the other goes through `packages/freight_seams/`.
 
 At **every session start**, read `OWNERSHIP.md`, `progress.md`, the **active** `docs/specs/NN-*.md` for the lane you are working in, then relevant parts of `docs/PRD.md`. The PRD is context, **not** permission to implement future phases. Follow explicit recent user decisions over outdated PRD proposals.
 

@@ -6,22 +6,41 @@ the other side's real implementation lands. See seams.py for who owes what.
 
 from freight_seams.cards import CardAction, CardSpec
 from freight_seams.fakes import (
+    FakeAllocationSeam,
+    FakeApprovalSeam,
     FakeBookingSeam,
     FakeCardSeam,
     FakeDisruptionSeam,
     FakeRecoverySeam,
     demo_displaced_bookings,
+    demo_recovery_offers,
 )
-from freight_seams.seams import BookingSeam, CardSeam, DisruptionSeam, RecoverySeam
+from freight_seams.seams import (
+    AllocationSeam,
+    ApprovalSeam,
+    BookingSeam,
+    CardSeam,
+    DisruptionSeam,
+    RecoverySeam,
+)
 from freight_seams.types import (
     BookingStatusView,
     DisruptedBooking,
     RecoveryAssignment,
+    RecoveryOffer,
     RecoveryOutcome,
+    RecoveryProposal,
     WithdrawalSummary,
 )
 
 __all__ = [
+    "AllocationSeam",
+    "ApprovalSeam",
+    "FakeAllocationSeam",
+    "FakeApprovalSeam",
+    "RecoveryOffer",
+    "RecoveryProposal",
+    "demo_recovery_offers",
     "BookingSeam",
     "CardAction",
     "CardSeam",

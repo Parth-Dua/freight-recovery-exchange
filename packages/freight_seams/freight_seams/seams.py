@@ -7,8 +7,14 @@ Nobody waits for a phase gate to start.
     Seam                Real implementation owner   Lands in
     BookingSeam         Parth                       phase 3 + 4
     DisruptionSeam      Tisya                       phase 5
-    RecoverySeam        Parth                       phase 6 + 7
+    AllocationSeam      Tisya                       phase 6 (allocation)
+    ApprovalSeam        Tisya                       phase 7 WP3
+    RecoverySeam        Parth                       phase 6 (offers) + 7 (commitments)
     CardSeam            Tisya                       phase 3 WP5 + phase 7 WP5
+
+Recovery in one line: Parth talks to the carriers and makes bookings real; Tisya
+decides who goes where, checks the carriers aren't overpromising, and explains it.
+The step-by-step table is in OWNERSHIP.md.
 
 Rules for changing anything in this file: additive only, and the other owner says yes
 in chat first. Adding a method to a Protocol breaks every implementer, so new methods
@@ -24,7 +30,9 @@ from freight_seams.cards import CardAction, CardSpec
 from freight_seams.types import (
     BookingStatusView,
     DisruptedBooking,
+    RecoveryOffer,
     RecoveryOutcome,
+    RecoveryProposal,
     WithdrawalSummary,
 )
 
@@ -63,9 +71,9 @@ class BookingSeam(Protocol):
 class DisruptionSeam(Protocol):
     """Owner: Tisya. A sailing closes and its commitments become displaced.
 
-    Parth's phase 6 solver needs `disrupted_bookings` and nothing else from the
-    console. Until the console is merged, `FakeDisruptionSeam` returns the spec 06
-    work-package-5 fixture, so the solver can be written and tested today.
+    `disrupted_bookings` is the allocation's input (AllocationSeam, also Tisya's).
+    `FakeDisruptionSeam` returns the spec 06 work-package-5 fixture, so recovery can
+    be written and tested before the real Tiger-backed implementation lands.
     """
 
     async def withdraw(
@@ -86,11 +94,17 @@ class DisruptionSeam(Protocol):
 
 @runtime_checkable
 class RecoverySeam(Protocol):
-    """Owner: Parth. Displaced commitments become replacement commitments.
+    """Owner: Parth. Runs a recovery and makes the result real.
 
-    Tisya's console and the ASI:One summary render whatever this returns. The console
-    never infers recovery state from the database; it asks here, so there is one
-    source of truth about what was actually committed.
+    Orchestrates steps 3, 7 and 8 of the recovery table in OWNERSHIP.md: asks the
+    carriers for replacement space over ACP, hands the validated offers to
+    `AllocationSeam.allocate` (Tisya), routes over-limit bookings through
+    `ApprovalSeam` (Tisya), then reserves and confirms the replacements. If a
+    reservation fails it releases the rest and calls `allocate` once more.
+
+    Tisya's console and the ASI:One summary render whatever this returns. They never
+    infer recovery state from the database; they ask here, so there is one source of
+    truth about what was actually committed.
     """
 
     async def recover(self, *, sailing_id: str, triggered_at: datetime) -> RecoveryOutcome:
@@ -126,7 +140,7 @@ class CardSeam(Protocol):
         """Phase 3 WP5. Carousel of real offers; every choice maps to a real offer_id."""
         ...
 
-    def build_approval_review(self, proposal: RecoveryOutcome) -> CardSpec:
+    def build_approval_review(self, proposal: RecoveryProposal) -> CardSpec:
         """Phase 7. Human-in-the-loop gate when recovery exceeds the buyer envelope."""
         ...
 
@@ -137,4 +151,53 @@ class CardSeam(Protocol):
 
     def parse_card_response(self, text: str) -> CardAction | None:
         """JSON on a direct @mention, prose via the planner. Both must resolve here."""
+        ...
+
+
+@runtime_checkable
+class AllocationSeam(Protocol):
+    """Owner: Tisya. The recovery decision: who goes where.
+
+    Called by Parth's recovery orchestration with the stranded bookings and the
+    offers that passed his message-level checks. Inside, the real implementation:
+
+      1. Checks each offer's claimed capacity against Tiger (sellable slots on that
+         sailing, net of existing holds and commitments). An overstated claim is
+         trusted only for what Tiger confirms, and the explanation says so.
+      2. Solves the joint allocation with OR-Tools under spec 06's rules: never exceed
+         verified capacity, never split a no-split booking, respect arrival deadlines
+         and approved extra cost, never use a slot twice, no special-cased buyers.
+      3. Objective, in order: most bookings fully recovered, then lowest total cost,
+         then a deterministic tie-break.
+
+    Returns a proposal, never a booking. Bookings whose replacement exceeds the
+    buyer's approved extra cost are listed in `needs_approval_booking_ids`.
+    """
+
+    async def allocate(
+        self,
+        *,
+        recovery_run_id: str,
+        stranded: list[DisruptedBooking],
+        offers: list[RecoveryOffer],
+    ) -> RecoveryProposal:
+        ...
+
+
+@runtime_checkable
+class ApprovalSeam(Protocol):
+    """Owner: Tisya. Human-in-the-loop when recovery exceeds what the buyer approved.
+
+    Spec 07: outside the buyer's limits, nothing is committed until the buyer approves
+    in ASI:One, and that approval must survive the buyer leaving and coming back
+    (AT-07-05). Parth's orchestration requests approval and waits on the status; it
+    never commits a `needs_approval` booking while the status is not APPROVED.
+    """
+
+    async def request_approval(self, *, proposal: RecoveryProposal, booking_id: str, buyer_id: str) -> str:
+        """Ask the buyer in ASI:One. Returns an approval_id. Idempotent per booking."""
+        ...
+
+    async def approval_status(self, approval_id: str) -> str:
+        """One of PENDING, APPROVED, DECLINED, EXPIRED."""
         ...

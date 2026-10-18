@@ -38,6 +38,22 @@ TIGER_DATABASE_URL=... uv run pytest -q   # adds the live Tiger suite
 `test_withdrawal_logic.py` is unit-only and proves nothing about Tiger.
 `test_withdrawal_live.py` is the phase 5 evidence and skips without a database URL.
 
+## Local dev database
+
+A TimescaleDB container on your own machine (the same software as Tiger Cloud), so tests
+that withdraw sailings never touch the shared database. Needs Docker running.
+
+```
+cd console
+uv run python scripts/dev_db.py up       # first time: creates it; later: starts it
+uv run python scripts/dev_db.py reset    # wipe, migrate, seed, preseed Buyers B and C
+```
+
+`up` fills the repo-root `.env` the first time (local URL, generated password, carrier seeds;
+nothing printed). `reset` is the clean slate after live tests cancel sailings. Both refuse to
+run unless `TIGER_DATABASE_URL` points at 127.0.0.1 or localhost, so they can never wipe the
+shared Tiger Cloud database used for the demo.
+
 ## Seeding something to disrupt
 
 A withdrawal is only interesting if the sailing carries commitments. Phase 4 is several
