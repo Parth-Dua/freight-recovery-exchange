@@ -369,3 +369,22 @@
 - Bug: read-only cards were sent with requires_card_interaction="false"; ASI:One renders a card only when it is
   "true", so they showed as plain text (recovery transcript, cancellation alert, receipts). Now always "true",
   read-only cards keep is_terminal. Needs a live ASI:One look.
+
+### 2026-10-18 — HX-OPS-001 Mission Control & Time Machine (docs/specs_2/hormuz-exchange-mission-control-spec.md)
+- Read-only ops service `freight_exchange/ops` (127.0.0.1:8820, GET only + SSE): sanitized projection, public event
+  stream (allowlisted payloads, pseudonymous buyers, last-line redaction guard), incidents + per-booking state machine,
+  negotiations with public timelines, replay bundles (checkpoint + ordered events + coverage + Tiger reference),
+  analytics (deals / capacity / recovery / activity) with provenance, Decision Inspector. No business writes.
+- Observer writes only `sailing_capacity_snapshots` (hypertable; every minute + on inventory transitions) and
+  `market_state_checkpoints` (every minute when the market moved, and after a reset). Migration 014 also adds the
+  `market_activity_1m` continuous aggregate with a 1-minute refresh policy; the activity chart reads materialized
+  buckets below the watermark + the raw hypertable tail above it (non-overlapping; reconciled count shown).
+- React/TS dashboard (`dashboard/`): Mission Control (SVG map from bundled coastlines, real port coordinates,
+  simulated lanes/positions), Agent Universe (session-true edges, concurrent packets from persisted events, lanes,
+  timelines), War Room (evidence-gated lifecycle, slot tiles proposed/held/confirmed, five-stage values, FCFS vs joint),
+  Time Machine (pure reducer over checkpoint + events, scrub/step/speeds/key moments, terminal cross-check vs Tiger),
+  Intelligence (3 chapters + activity, chart → replay), shared inspector, beacon, reduce-motion, demo focus.
+- Verified on a recorded live incident (rec_af10aeb14a41: 3 buyers, 6 recovery sessions, 2 approvals, 3/3
+  confirmed): War Room RESOLVED 3/3; replay fixture tests (18 vitest) incl. final state == Tiger, no quote before it
+  was sent, nothing green before commit, never 3/3 while an approval is pending; 7 pytest privacy/state tests.
+- `scripts/demo_reset.sh`: one-command reset to the finalized demo baseline at a fixed anchor (2026-10-19).

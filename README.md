@@ -73,10 +73,18 @@ Connect the gateway's mailbox once: open the inspector link printed in `logs/gat
 4. When a carrier withdraws your sailing (console at http://localhost:8800), you get a disruption card, then
    either a confirmed rebooking or an approval card if the replacement costs more than your auto-rebook limit.
 
+## Mission Control (operator / judge view, read-only)
+
+`./scripts/run_demo.sh` also starts the read-only ops service; build the UI once with
+`cd dashboard && npm install && npm run build`, then open http://127.0.0.1:8820. Five views: Mission Control,
+Agent Universe, Disruption War Room, Time Machine, Market Intelligence — all driven by persisted Tiger events and
+state (no actions; buyers stay in ASI:One, carriers in their console). Reset the demo market to its finalized
+baseline before each take with `./scripts/demo_reset.sh`.
+
 ## Verify
 
 ```bash
-uv run pytest -q && (cd carriers && uv run pytest -q) && (cd gateway && uv run pytest -q)
+uv run pytest -q && (cd carriers && uv run pytest -q) && (cd gateway && uv run pytest -q) && (cd dashboard && npx vitest run)
 for p in packages/freight_seams packages/freight_disruption packages/freight_allocation console; do (cd $p && uv run pytest -q); done
 uv run python scripts/card_flow_smoke.py                    # card journey through the internal API (live carriers)
 uv run --project gateway python scripts/fet_booking_smoke.py  # REAL testnet fee -> on-chain proof -> confirmed booking

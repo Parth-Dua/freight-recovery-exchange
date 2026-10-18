@@ -30,8 +30,12 @@ Updated as the v2 phases (`docs/specs_2/`) progress. Only things that need **you
 
 ## Test it — the demo script (≈5 min)
 
-Before each take: `uv run python scripts/demo.py reset && uv run python scripts/demo.py seed` (Buyer B: 1 container on
-ATL-101, $300 auto-rebook limit; Buyer C: DHW-571, unaffected). Services: `./scripts/run_demo.sh`.
+**Before every take (one command):** `./scripts/demo_reset.sh` — wipes all demo activity and restores the finalized
+baseline at a FIXED date anchor (same inputs, same result every time; prints `baseline: OK` and the exact inputs).
+Services: `./scripts/run_demo.sh`. **Mission Control** (read-only operator/judge view): http://127.0.0.1:8820
+(build once: `cd dashboard && npm install && npm run build`). Keep it open on a second screen: Mission Control →
+Agent Universe while booking → War Room after the withdrawal (or tick "Demo focus" to jump there automatically) →
+Time Machine "Replay incident" → Intelligence. Wait ~1 min after the reset before withdrawing so a replay checkpoint exists.
 
 1. ASI:One, new chat: `@freight-disruption I need to ship cargo` → form: Jebel Ali → Mumbai, **2**, arrive no
    later than **Oct 23** (the date `seed` prints), cargo ready Any time, split **off**, General, budget blank,

@@ -30,3 +30,7 @@ logs/
 *\ [0-9].*
 *\ [0-9][0-9].*
 *\ [0-9]
+
+# Mission Control dashboard (build with: cd dashboard && npm install && npm run build)
+dashboard/node_modules/
+dashboard/dist/

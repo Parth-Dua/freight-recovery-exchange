@@ -32,6 +32,7 @@ TRANSACTIONAL = [
     "recovery_legs", "recovery_offers", "negotiation_messages", "negotiation_sessions", "recovery_runs", "bookings", "hold_slots", "holds", "offer_selections", "carrier_offer_log",
     "agent_messages", "offers", "cargo_requests", "disruption_events", "market_events", "market_snapshots",
     "negotiation_trace_cards", "card_instances", "chat_outbox", "gateway_events",
+    "sailing_capacity_snapshots", "market_state_checkpoints",
 ]
 
 
