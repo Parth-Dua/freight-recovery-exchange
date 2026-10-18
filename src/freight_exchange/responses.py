@@ -51,6 +51,9 @@ _ROUTE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     (ROUTE_SELECT, SELECT_INTENT),
     # an imperative "book …" is a booking command even if it mentions "auto-rebook"
     (ROUTE_BOOKING, re.compile(r"^\s*(?:please\s+|ok(?:ay)?,?\s+|yes,?\s+)?(?:book|reserve)\b")),
+    # asking for the payment link starts (or resumes) the booking
+    (ROUTE_BOOKING, re.compile(r"\b(stripe|payment link|checkout link|pay(?:ment)? page|link to pay|"
+                               r"where (?:do|can|should) i pay|how (?:do|can) i pay)\b")),
     # status questions beat booking words ("status of my booking")
     (ROUTE_RECOVERY, re.compile(
         r"\b(recover\w*|re-?rout\w*|disrupt\w*|withdraw\w*|rebook\w*|cancel+ed|my bookings?|"
@@ -263,8 +266,9 @@ def selected_reply(offer: dict, request_id: str, already: bool = False) -> str:
         f"{offer['quantity']}× {offer['container_type']}, departs {when(offer['departure_at'])} → arrives "
         f"{when(offer['arrival_at'])} UTC, **{money(offer['total_price_minor'], offer['currency'])}**, "
         f"valid until {offer['expires_at']:%H:%M} UTC (offer {offer['offer_id']}).\n"
-        f"Saved in Tiger on request {request_id} as OFFER_SELECTED. This is **not a booking**: no capacity is held "
-        "and nothing is charged. Booking with a carrier hold and test-mode payment comes next."
+        f"Saved in Tiger on request {request_id} as OFFER_SELECTED. This is **not a booking yet**: no capacity is "
+        "held and nothing is charged.\nSay **book** to have the carrier hold it and get the Stripe TEST payment link "
+        "(optionally: “book it, auto-rebook up to $300 extra”)."
     )
 
 

@@ -124,6 +124,9 @@ def test_strip_mentions_keeps_emails_and_prices():
     ("my sailing was cancelled", r.ROUTE_RECOVERY),
     ("I paid", r.ROUTE_PAID),
     ("cancel", r.ROUTE_CANCEL),
+    ("where is the stripe link>", r.ROUTE_BOOKING),
+    ("how do I pay?", r.ROUTE_BOOKING),
+    ("send me the payment link", r.ROUTE_BOOKING),
 ])
 def test_phase4_routes(message, route):
     assert r.classify(message) == route
