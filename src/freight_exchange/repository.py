@@ -322,6 +322,130 @@ class Repository:
                          sailing_id=offer[4], payload={"source": source, "replaced": existing[0] if existing else None})
         return {"status": "SELECTED"}
 
+    # ---- booking intents (Phase 4) ------------------------------------------
+    _INTENT_SQL = """
+        SELECT i.intent_id, i.request_id, i.offer_id, i.buyer_id, i.session_id, i.carrier_id, i.hold_id,
+               i.payment_id, i.booking_id, i.status, i.freight_minor, i.fee_minor, i.currency,
+               i.hold_expires_at, i.detail, k.display_name, k.agent_address, k.endpoint_url,
+               p.reference AS payment_reference, p.checkout_url, o.sailing_id, o.quantity, o.container_type,
+               o.departure_at, o.arrival_at, b.payment_terms, b.confirmed_at
+        FROM booking_intents i
+        JOIN carriers k ON k.carrier_id = i.carrier_id
+        JOIN offers o ON o.offer_id = i.offer_id
+        LEFT JOIN payment_records p ON p.payment_id = i.payment_id
+        LEFT JOIN bookings b ON b.booking_id = i.booking_id
+    """
+    _LIVE = ("HOLD_REQUESTED", "PAYMENT_PENDING", "PAYMENT_VERIFIED_TEST", "BOOKING_PENDING",
+             "PAYMENT_RECONCILIATION_REQUIRED", "BOOKING_CONFIRMED")
+
+    async def _intent(self, conn, where: str, params: tuple) -> dict | None:
+        cur = await conn.execute(self._INTENT_SQL + where, params)
+        row = await cur.fetchone()
+        return dict(zip([c.name for c in cur.description], row)) if row else None
+
+    async def selected_offer(self, request_id: str) -> dict | None:
+        async with self.pool.connection() as conn:
+            cur = await conn.execute(
+                """SELECT o.offer_id, o.request_id, o.carrier_id, k.display_name, k.agent_address, k.endpoint_url,
+                          o.sailing_id, o.quantity, o.container_type, o.total_price_minor, o.currency,
+                          o.departure_at, o.arrival_at, o.expires_at, r.origin_port, r.destination_port
+                   FROM offer_selections s
+                   JOIN offers o ON o.offer_id = s.offer_id
+                   JOIN carriers k ON k.carrier_id = o.carrier_id
+                   JOIN cargo_requests r ON r.request_id = o.request_id
+                   WHERE s.request_id = %s""", (request_id,))
+            row = await cur.fetchone()
+            return dict(zip([c.name for c in cur.description], row)) if row else None
+
+    async def live_intent(self, session_id: str) -> dict | None:
+        async with self.pool.connection() as conn:
+            return await self._intent(
+                conn, "WHERE i.session_id = %s AND i.status = ANY(%s) ORDER BY i.created_at DESC LIMIT 1",
+                (session_id, list(self._LIVE)))
+
+    async def create_intent(self, *, intent_id: str, request_id: str, offer_id: str, buyer_id: str, session_id: str,
+                            carrier_id: str, freight_minor: int, fee_minor: int, currency: str) -> dict:
+        async with self.pool.connection() as conn, conn.transaction():
+            cur = await conn.execute(
+                """INSERT INTO booking_intents (intent_id, request_id, offer_id, buyer_id, session_id, carrier_id,
+                       status, freight_minor, fee_minor, currency)
+                   VALUES (%s, %s, %s, %s, %s, %s, 'HOLD_REQUESTED', %s, %s, %s)
+                   ON CONFLICT DO NOTHING RETURNING intent_id""",
+                (intent_id, request_id, offer_id, buyer_id, session_id, carrier_id, freight_minor, fee_minor, currency))
+            if await cur.fetchone():
+                corr = await (await conn.execute(
+                    "SELECT correlation_id FROM cargo_requests WHERE request_id = %s", (request_id,))).fetchone()
+                await _event(conn, "BOOKING_INTENT_CREATED", "booking_intent", intent_id, correlation_id=corr[0],
+                             carrier_id=carrier_id, payload={"offer_id": offer_id, "freight_minor": freight_minor,
+                                                              "fee_minor": fee_minor})
+            return await self._intent(
+                conn, "WHERE i.request_id = %s AND i.status = ANY(%s) ORDER BY i.created_at DESC LIMIT 1",
+                (request_id, list(self._LIVE)))
+
+    async def update_intent(self, intent_id: str, status: str, *, detail: str | None = None) -> None:
+        async with self.pool.connection() as conn, conn.transaction():
+            row = await (await conn.execute(
+                """UPDATE booking_intents SET status = %s, detail = coalesce(%s, detail), updated_at = now()
+                   WHERE intent_id = %s RETURNING request_id, carrier_id""", (status, detail, intent_id))).fetchone()
+            corr = await (await conn.execute(
+                "SELECT correlation_id FROM cargo_requests WHERE request_id = %s", (row[0],))).fetchone()
+            await _event(conn, f"BOOKING_{status}" if not status.startswith(("PAYMENT", "BOOKING", "HOLD"))
+                         else status, "booking_intent", intent_id, correlation_id=corr[0], carrier_id=row[1],
+                         payload={"detail": detail})
+
+    async def record_checkout(self, intent_id: str, *, hold_id: str, hold_expires_at, session, freight_minor: int,
+                              fee_minor: int) -> dict:
+        payment_id = f"pay_{uuid4().hex[:16]}"
+        async with self.pool.connection() as conn, conn.transaction():
+            intent = await (await conn.execute(
+                "SELECT request_id, carrier_id, currency FROM booking_intents WHERE intent_id = %s FOR UPDATE",
+                (intent_id,))).fetchone()
+            await conn.execute(
+                """INSERT INTO payment_records (payment_id, provider, reference, purpose, amount_minor, currency,
+                       status, intent_id, livemode, freight_minor, fee_minor, checkout_url, provider_status, updated_at)
+                   VALUES (%s, 'stripe_test', %s, 'simulated freight + booking fee (TEST)', %s, %s,
+                           'PAYMENT_PENDING', %s, false, %s, %s, %s, 'open/unpaid', now())""",
+                (payment_id, session.session_id, session.amount_total, intent[2], intent_id, freight_minor, fee_minor,
+                 session.url))
+            await conn.execute(
+                """UPDATE booking_intents SET status = 'PAYMENT_PENDING', hold_id = %s, hold_expires_at = %s,
+                       payment_id = %s, updated_at = now() WHERE intent_id = %s""",
+                (hold_id, hold_expires_at, payment_id, intent_id))
+            corr = await (await conn.execute(
+                "SELECT correlation_id FROM cargo_requests WHERE request_id = %s", (intent[0],))).fetchone()
+            await _event(conn, "PAYMENT_REQUESTED", "payment", payment_id, correlation_id=corr[0], carrier_id=intent[1],
+                         payload={"provider": "stripe_test", "amount_minor": session.amount_total,
+                                  "freight_minor": freight_minor, "fee_minor": fee_minor, "hold_id": hold_id})
+            return await self._intent(conn, "WHERE i.intent_id = %s", (intent_id,))
+
+    async def record_payment_check(self, payment_id: str, check) -> None:
+        async with self.pool.connection() as conn, conn.transaction():
+            row = await (await conn.execute(
+                """UPDATE payment_records SET status = %s, provider_status = %s, livemode = %s,
+                       verified_at = CASE WHEN %s = 'PAYMENT_VERIFIED_TEST' THEN coalesce(verified_at, now())
+                                          ELSE verified_at END,
+                       updated_at = now()
+                   WHERE payment_id = %s AND status <> %s RETURNING intent_id""",
+                (check.status, check.provider_status, check.livemode, check.status, payment_id, check.status))).fetchone()
+            if row:  # only on a status change, so repeated checks don't spam events
+                await _event(conn, check.status, "payment", payment_id, payload={"provider_status": check.provider_status,
+                                                                                 "detail": check.detail})
+
+    async def complete_booking(self, intent_id: str, booking_id: str) -> dict:
+        async with self.pool.connection() as conn, conn.transaction():
+            row = await (await conn.execute(
+                """UPDATE booking_intents SET status = 'BOOKING_CONFIRMED', booking_id = %s, updated_at = now()
+                   WHERE intent_id = %s RETURNING request_id, payment_id, carrier_id""",
+                (booking_id, intent_id))).fetchone()
+            await conn.execute("UPDATE payment_records SET booking_id = %s WHERE payment_id = %s", (booking_id, row[1]))
+            await conn.execute("UPDATE cargo_requests SET status = 'BOOKED', updated_at = now() WHERE request_id = %s",
+                               (row[0],))
+            corr = await (await conn.execute(
+                "SELECT correlation_id FROM cargo_requests WHERE request_id = %s", (row[0],))).fetchone()
+            await _event(conn, "BOOKING_RECEIPT_ISSUED", "booking", booking_id, correlation_id=corr[0],
+                         carrier_id=row[2], payload={"intent_id": intent_id, "payment_id": row[1]})
+            return await self._intent(conn, "WHERE i.intent_id = %s", (intent_id,))
+
     # ---- chat-turn idempotency ----------------------------------------------
     async def claim_turn(self, turn_key: str, session_id: str, request_ref: str, window_s: int) -> dict | None:
         """Claim this turn. Returns None if we own it, else the existing turn row (duplicate delivery)."""
