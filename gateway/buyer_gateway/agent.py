@@ -159,7 +159,8 @@ def build_gateway(*, seed: str, port: int, backend: BackendClient, name: str = "
         ctx.logger.info(f"gateway address {agent.address}; FET wallet {agent.wallet.address()}")
         token = os.getenv("AGENTVERSE_API_KEY", "").strip()
         if not token:
-            ctx.logger.info("No AGENTVERSE_API_KEY: connect the mailbox once via the inspector link above.")
+            ctx.logger.info("No AGENTVERSE_API_KEY: relying on the inspector mailbox connection "
+                            "(a missing mailbox logs 'Agent mailbox not found').")
             return
 
         async def register() -> None:

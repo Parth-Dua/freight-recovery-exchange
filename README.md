@@ -23,7 +23,7 @@ is recorded in **Tiger (TimescaleDB)**.
 
 | Agent | Address | Role |
 |---|---|---|
-| **Hormuz Exchange buyer gateway** (talk to this one in ASI:One) | `agent1q0ktnrhtmerdle6tz9lmdj9v7c0vzrtnl8wdvuthj88cj9ydp7j3vmymxm8` | Mailbox uAgent: Chat Protocol + Interactive Cards + seller Payment Protocol (both manifests published) |
+| **Hormuz Exchange buyer gateway** (talk to this one in ASI:One: `@freight-disruption`) | `agent1q0ktnrhtmerdle6tz9lmdj9v7c0vzrtnl8wdvuthj88cj9ydp7j3vmymxm8` | Mailbox uAgent: Chat Protocol + Interactive Cards + seller Payment Protocol (both manifests published) |
 | Atlas Lines (fictional) | `agent1qvjf3yf8gnps47a5g6e5ca7ut5g0mul25nnwvvuuc6c64ndyundlz7g7evk` | Carrier uAgent, private `fill_ship` policy |
 | Beacon Maritime (fictional) | `agent1q25t3ute3t7q4jnhkxx2p82a5ddkdrlg4wt364xv02e0w9te4360k6jx3tl` | Carrier uAgent, `protect_margin` |
 | Cove Shipping (fictional) | `agent1q0d9kttp2thtehadr89n02rque7rga7pqqgpfw4glvq4cczn2dtlgx4grlp` | Carrier uAgent, `balanced` |
@@ -65,7 +65,7 @@ Connect the gateway's mailbox once: open the inspector link printed in `logs/gat
 
 ## Use it in ASI:One
 
-1. Start a new chat with the gateway agent and say **"I need to ship cargo"** → a form card.
+1. Start a new chat with the gateway agent (`@freight-disruption`) and say **"I need to ship cargo"** → a form card.
 2. Submit it → your buyer agent negotiates with every eligible carrier; a carousel of final offers (with the
    negotiation trace) arrives in the same chat.
 3. Choose an offer → review card (simulated freight + `0.1` testnet FET service fee) → **Confirm and pay**
@@ -88,7 +88,7 @@ uv run python scripts/demo.py audit && uv run python scripts/demo.py evidence
 
 | Item | Status | Evidence |
 |---|---|---|
-| Agentverse agent, Chat Protocol, usable in ASI:One | Gateway built, manifests published; live ASI:One run pending mailbox connect | `logs/gateway.log`, `docs/critical_alerts.md` |
+| Agentverse agent, Chat Protocol, usable in ASI:One | Gateway mailbox connected (`@freight-disruption`), manifests published, Agentverse delivery verified with a separate agent; live ASI:One run pending | `logs/gateway.log`, `docs/critical_alerts.md` |
 | Interactive Cards (form, carousel, review, detail) | Built per official schemas; journey verified via the backend | `scripts/card_flow_smoke.py`; live render pending |
 | Fetch Payment Protocol (FET testnet) | Seller protocol + on-chain verifier; real testnet transfers verified, paid bookings confirmed | tx `59ED6E70…F02B` → BK-79E93825 (`progress.md`); ASI:One wallet step pending |
 | Two-sided negotiation (≤2 counters, private policies/limits) | Live with 4 carrier agents | `negotiation_sessions`, `negotiation_messages`; no private fields in events |

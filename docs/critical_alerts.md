@@ -2,11 +2,11 @@
 
 Updated as the v2 phases (`docs/specs_2/`) progress. Only things that need **you** are here.
 
-## Status (2026-10-18 01:20 PDT) — all five phases built and verified without ASI:One
+## Status (2026-10-18) — all five phases built and verified without ASI:One; gateway mailbox connected
 
 | Phase | Built + verified (live carriers / Tiger / testnet) | Live ASI:One check (you) |
 |---|---|---|
-| 1 — uAgent gateway | ✅ Chat + Payment manifests published | ⏳ **blocked on mailbox connect (alert 1)** |
+| 1 — uAgent gateway | ✅ Chat + Payment manifests published; mailbox connected (handle `@freight-disruption`) — a separate agent's chat message was delivered via Agentverse and answered with the form card | ⏳ your first ASI:One chat |
 | 2 — Interactive Cards | ✅ form → carousel → review → receipt; recovery cards | ⏳ |
 | 3 — Fetch FET testnet fee | ✅ real testnet transfers verified on-chain; paid bookings confirmed | ⏳ needs ASI:One wallet (alert 2) |
 | 4 — Two-sided negotiation | ✅ 4 carrier agents, ≤2 counters, private policies | ⏳ |
@@ -14,10 +14,8 @@ Updated as the v2 phases (`docs/specs_2/`) progress. Only things that need **you
 
 ## Needs you (in this order)
 
-1. **Connect the gateway's Agentverse mailbox (one time, ~30 s) — blocks every live ASI:One test.**
-   Open https://agentverse.ai/inspect/?uri=http%3A//127.0.0.1%3A8110&address=agent1q0ktnrhtmerdle6tz9lmdj9v7c0vzrtnl8wdvuthj88cj9ydp7j3vmymxm8
-   and click **Connect → Mailbox** (or add `AGENTVERSE_API_KEY=` to `.env` and restart). Then in Agentverse
-   give the agent a handle (e.g. `hormuz-exchange`) and check its profile shows the README.
+1. ✅ **Mailbox connected** (you, via the inspector). Handle: `@freight-disruption`. Check in Agentverse that the
+   agent's profile shows the README and both protocols. Nothing else to do here.
 2. **ASI:One testnet FET wallet** with a little test FET (official Fetch faucet; never mainnet). If ASI:One
    shows no FET payment step or the commit lacks `buyer_fet_wallet`, write that here — it is the documented
    P0 blocker (PRD §7) and I will record it.
@@ -29,8 +27,8 @@ Updated as the v2 phases (`docs/specs_2/`) progress. Only things that need **you
 Services: `./scripts/run_demo.sh` (already running from my session). Gateway:
 `agent1q0ktnrhtmerdle6tz9lmdj9v7c0vzrtnl8wdvuthj88cj9ydp7j3vmymxm8`.
 
-**A. Book (ASI:One, new chat with the gateway):**
-1. `I need to ship cargo` → form card. Jebel Ali → Mumbai, 2 containers, arrive-by 3–4 days out,
+**A. Book (ASI:One, new chat with the gateway — `@freight-disruption`):**
+1. `@freight-disruption I need to ship cargo` → form card. Jebel Ali → Mumbai, 2 containers, arrive-by 3–4 days out,
    auto-rebook limit e.g. 300. Submit.
 2. ~20–40 s later an offers **carousel** (with each carrier's negotiation trace) appears. Choose one.
 3. **Review** card → **Confirm and pay** → approve the **0.1 testnet FET** payment → **receipt** card.

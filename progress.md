@@ -335,3 +335,9 @@
 - Tests / evidence: docs only; no code or tests changed.
 - NEEDS-FROM-PARTH: agree the handoffs in section 13 (session columns, `market_events` negotiation event names, new `carrier_policies` keys); confirm the 03:00 takeover check.
 - Next: card test, then the carrier dashboard.
+
+### 2026-10-18 — gateway mailbox connected
+- Parth connected the gateway mailbox via the Agentverse inspector; handle `@freight-disruption`.
+- Verified over the real Agentverse network (not ASI:One): a throwaway local uAgent sent `I need to ship cargo`
+  to `agent1q0ktnrh…ymxm8`; the gateway received it via its mailbox, acknowledged, and replied with the
+  shipment form card (Chat Protocol text + card metadata). Live ASI:One rendering still to be checked by Parth.
