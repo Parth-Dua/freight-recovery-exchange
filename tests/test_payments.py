@@ -71,7 +71,7 @@ def test_checkout_has_freight_and_fee_lines_and_idempotency_key():
                                          freight_label="Beacon BEA-201, 2x20GP", expires_at=expires))
     params, options = client.v1.checkout.sessions.created[0]
     names = [i["price_data"]["product_data"]["name"] for i in params["line_items"]]
-    assert names == ["Simulated ocean freight (TEST)", "Booking service fee (TEST)"]
+    assert names == ["Ocean freight", "Booking service fee"]
     assert cs.amount_total == 530500 and params["submit_type"] == "book"
     assert params["metadata"]["intent_id"] == params["client_reference_id"] == "intent_1"
     assert options == {"idempotency_key": "checkout-intent_1"}

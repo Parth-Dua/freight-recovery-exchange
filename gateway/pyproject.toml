@@ -1,0 +1,20 @@
+[project]
+name = "hormuz-buyer-gateway"
+version = "0.1.0"
+description = "Mailbox uAgent gateway: ASI:One Chat + Interactive Cards + seller Payment Protocol, forwarding to the Exchange backend"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    # Same uagents build the carrier agents already run in this repo (0.26.1 / uagents-core 0.4.12):
+    # the PRD's suggested 0.25.5 pair is the tutorial pin, adjusted per spec to the installed platform.
+    "uagents==0.26.1",
+    "python-dotenv>=1.0,<2",
+    "aiohttp>=3.9,<4",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<9", "pytest-asyncio>=0.24,<0.25"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"

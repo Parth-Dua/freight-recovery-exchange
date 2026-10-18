@@ -165,7 +165,7 @@ def _review_body(sailing: SailingRow, risk_event: RiskEvent, bookings: list[tupl
     <div class="meta">{escape(sailing.carrier_name)} · {escape(sailing.origin_port)} &rarr;
       {escape(sailing.destination_port)} · departs {sailing.departure_at:%d %b %H:%M}</div>
     <div class="advisory">
-      <div class="meta">{escape(risk_event.label)} · {escape(risk_event.source_reference)} (simulated)</div>
+      <div class="meta">{escape(risk_event.label)} · {escape(risk_event.source_reference)}</div>
       <div>{escape(risk_event.description)}</div>
     </div>
     {affected}

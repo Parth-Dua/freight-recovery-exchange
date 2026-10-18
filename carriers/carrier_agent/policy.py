@@ -8,8 +8,9 @@ never sent to the Exchange — only the resulting offer terms are.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal
 
 from freight_contracts import CargoSpec, RejectReason
 
@@ -34,13 +35,75 @@ class Policy:
     utilization_premium_pct: int
     offer_ttl_seconds: int
     selection: str  # earliest_arrival | earliest_departure
-    concession_pct: int = 0  # max discount off our own opening price on a counter (private)
+    concession_pct: int = 0  # legacy single concession; fills empty/full when those are absent
     payment_terms: str = "Freight prepaid to the carrier before departure"  # shown on receipts
     max_hold_seconds: int = 3600
+    # v2 private commercial knobs (percentage points; fractions internally)
+    business_goal: str = "balanced"  # fill_ship | balanced | protect_margin (preset label, knobs below decide)
+    concession_empty_pct: float | None = None  # concession when the ship is empty ...
+    concession_full_pct: float | None = None  # ... shrinking linearly to this when full
+    disruption_surge_pct: float = 0  # recovery quotes only
+    cargo_surcharge_pct: dict = field(default_factory=dict)  # class -> pct | "reject"
+    bulk_discount_pct: float = 0
+    bulk_discount_min_units: int = 99
 
     @classmethod
     def from_json(cls, data: dict) -> "Policy":
-        return cls(**{k: data[k] for k in cls.__dataclass_fields__ if k in data})
+        """Read the carrier's current policy; unknown keys are ignored, legacy keys keep working."""
+        values = {k: data[k] for k in cls.__dataclass_fields__ if k in data}
+        legacy = values.get("concession_pct", 0)
+        values.setdefault("concession_empty_pct", legacy)
+        values.setdefault("concession_full_pct", legacy)
+        policy = cls(**values)
+        policy.validate()
+        return policy
+
+    def validate(self) -> None:
+        if not 0 < self.min_price_per_unit_minor <= self.target_price_per_unit_minor:
+            raise PolicyConfigError("floor must be positive and not above the target price")
+        for name in ("utilization_premium_pct", "concession_empty_pct", "concession_full_pct",
+                     "disruption_surge_pct", "bulk_discount_pct"):
+            if not 0 <= float(getattr(self, name) or 0) <= 100:
+                raise PolicyConfigError(f"{name} must be between 0 and 100")
+
+
+class PolicyConfigError(ValueError):
+    """A carrier policy that would allow nonsense prices is refused, never silently applied."""
+
+
+def _frac(pct) -> Decimal:
+    return Decimal(str(pct or 0)) / 100
+
+
+def utilization(sailing) -> Decimal:
+    if not sailing.capacity_units:
+        return Decimal(1)
+    u = 1 - Decimal(sailing.available_units) / Decimal(sailing.capacity_units)
+    return min(Decimal(1), max(Decimal(0), u))
+
+
+def concession_fraction(policy: Policy, util: Decimal) -> Decimal:
+    legacy = policy.concession_pct
+    empty = _frac(legacy if policy.concession_empty_pct is None else policy.concession_empty_pct)
+    full = _frac(legacy if policy.concession_full_pct is None else policy.concession_full_pct)
+    return empty + (full - empty) * util
+
+
+def opening_unit_minor(policy: Policy, sailing, *, quantity: int = 1, cargo_class: str = "general",
+                       recovery: bool = False) -> int | None:
+    """Private opening price per container (minor units), or None when the cargo class is refused.
+    target x (1 + premium x utilization) x (1 + surge, recovery only) x (1 + class surcharge)
+    x (1 - bulk discount at or above the threshold); never below the floor."""
+    surcharge = (policy.cargo_surcharge_pct or {}).get(cargo_class, 0)
+    if surcharge == "reject":
+        return None
+    unit = Decimal(policy.target_price_per_unit_minor) * (1 + _frac(policy.utilization_premium_pct) * utilization(sailing))
+    if recovery:
+        unit *= 1 + _frac(policy.disruption_surge_pct)
+    unit *= 1 + _frac(surcharge)
+    if quantity >= policy.bulk_discount_min_units:
+        unit *= 1 - _frac(policy.bulk_discount_pct)
+    return max(policy.min_price_per_unit_minor, int(unit.quantize(Decimal(1), rounding=ROUND_HALF_UP)))
 
 
 @dataclass(frozen=True)
@@ -60,16 +123,18 @@ SUPPORTED_CONTAINER_TYPES = {"20GP"}
 
 
 def unit_price_minor(policy: Policy, sailing: SailingInventory) -> int:
-    utilization = 1 - sailing.available_units / sailing.capacity_units
-    premium = policy.target_price_per_unit_minor * policy.utilization_premium_pct * utilization / 100
-    return max(policy.min_price_per_unit_minor, round(policy.target_price_per_unit_minor + premium))
+    return opening_unit_minor(policy, sailing)
 
 
-def decide(cargo: CargoSpec, sailings: list[SailingInventory], policy: Policy, now: datetime) -> Quote | Decline:
+def decide(cargo: CargoSpec, sailings: list[SailingInventory], policy: Policy, now: datetime, *,
+           recovery: bool = False) -> Quote | Decline:
     if cargo.container_type not in SUPPORTED_CONTAINER_TYPES:
         return Decline(RejectReason.UNSUPPORTED_CONTAINER_TYPE, f"{cargo.container_type} not offered")
     if cargo.currency != policy.currency:
         return Decline(RejectReason.UNSUPPORTED_CORRIDOR, f"quotes only in {policy.currency}")
+    cargo_class = getattr(cargo, "cargo_class", "general") or "general"
+    if (policy.cargo_surcharge_pct or {}).get(cargo_class) == "reject":
+        return Decline(RejectReason.UNSUPPORTED_CARGO_CLASS, f"we do not carry {cargo_class} cargo")
 
     lane = [s for s in sailings if (s.origin_port, s.destination_port) == (cargo.origin_port, cargo.destination_port)]
     if not lane:
@@ -96,7 +161,7 @@ def decide(cargo: CargoSpec, sailings: list[SailingInventory], policy: Policy, n
         else (lambda s: (s.arrival_at, s.sailing_id))
     sailing = min(candidates, key=key)
     quantity = quantity_for(sailing)
-    total = unit_price_minor(policy, sailing) * quantity
+    total = opening_unit_minor(policy, sailing, quantity=quantity, cargo_class=cargo_class, recovery=recovery) * quantity
 
     if cargo.max_total_price_minor is not None and total > cargo.max_total_price_minor:
         floor_total = policy.min_price_per_unit_minor * quantity
@@ -152,7 +217,7 @@ def decide_recovery(items: list, sailings_by_type: dict[str, list[SailingInvento
             if not eligible:
                 continue
             units = min(s.available_units, sum(i.quantity for i in eligible))
-            total = unit_price_minor(policy, s) * units
+            total = opening_unit_minor(policy, s, quantity=units, recovery=True) * units
             enforce_floor(total, policy, units)
             quotes.append(RecoveryQuote(s, container_type, units, total, tuple(sorted(i.booking_id for i in eligible))))
 
@@ -184,15 +249,22 @@ def floor_total(policy: Policy, quantity: int) -> int:
     return policy.min_price_per_unit_minor * quantity
 
 
-def decide_counter(original_total: int, quantity: int, proposed: int, policy: Policy) -> CounterDecision:
-    """One counter: accept, meet part-way, or reject. Never below the private floor, never above
-    our own opening price, and the floor itself is never revealed in the reason text."""
+def decide_counter(original_total: int, quantity: int, proposed: int, policy: Policy, *,
+                   current_total: int | None = None, util: Decimal | None = None) -> CounterDecision:
+    """Answer one buyer counter: accept, meet part-way, or reject. The concession is measured from our
+    ORIGINAL opening price (two rounds can't compound it) and shrinks as the ship fills; never below
+    the private floor, never above the price being countered, and the floor is never revealed."""
+    current = original_total if current_total is None else current_total
     floor = floor_total(policy, quantity)
-    concession_limit = math.ceil(original_total * (100 - policy.concession_pct) / 100 / PRICE_STEP_MINOR) * PRICE_STEP_MINOR
-    min_acceptable = min(original_total, max(floor, concession_limit))
+    concession = concession_fraction(policy, util if util is not None else Decimal(0))
+    concession_limit = math.ceil(Decimal(original_total) * (1 - concession) / PRICE_STEP_MINOR) * PRICE_STEP_MINOR
+    min_acceptable = min(current, max(floor, int(concession_limit)))
 
     if proposed >= min_acceptable:
-        decision = CounterDecision("accept", min(proposed, original_total))
+        decision = CounterDecision("accept", min(proposed, current))
+    elif min_acceptable >= current:
+        return CounterDecision("reject", reason_code=RejectReason.BELOW_POLICY,
+                               reason="this is already our best price for this sailing")
     elif proposed >= floor:
         decision = CounterDecision("revise", min_acceptable)
     else:

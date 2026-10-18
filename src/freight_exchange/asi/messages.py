@@ -142,10 +142,17 @@ def rebooked_message(
     )
 
 
+def _buyer_reason(reason: str) -> str:
+    """Carrier protocol codes (e.g. 'hold refused: QUANTITY_MISMATCH') stay in the audit log, not the chat."""
+    if re.search(r"\b[A-Z]{3,}(_[A-Z]+)+\b|hold refused|not secured", reason):
+        return "The replacement carriers could not hold enough space for your shipment in time."
+    return reason
+
+
 def not_recovered_message(booking: DisruptedBooking, reason: str | None) -> str:
     paragraphs = [f"I couldn't find replacement space for booking {booking.booking_id} ({_containers(booking)})."]
     if reason and reason.strip():
-        paragraphs.append(reason.strip())
+        paragraphs.append(_buyer_reason(reason.strip()))
     paragraphs.append("Your original booking stays on record. Nothing new was booked or charged.")
     return "\n\n".join(paragraphs)
 

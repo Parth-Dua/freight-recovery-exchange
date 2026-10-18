@@ -52,6 +52,7 @@ class RejectReason(str, Enum):
     COUNTER_LIMIT_REACHED = "COUNTER_LIMIT_REACHED"
     OFFER_NOT_FOUND = "OFFER_NOT_FOUND"
     OFFER_EXPIRED = "OFFER_EXPIRED"
+    UNSUPPORTED_CARGO_CLASS = "UNSUPPORTED_CARGO_CLASS"
 
 
 class ErrorCode(str, Enum):
@@ -83,6 +84,7 @@ class CargoSpec(Model):
     max_total_price_minor: Optional[int] = Field(None, ge=1)
     currency: str = Field("USD", min_length=3, max_length=3)
     allow_split: bool = False
+    cargo_class: Literal["general", "high_value", "hazardous"] = "general"  # v2, public
 
     @validator("earliest_departure", "latest_arrival", allow_reuse=True)
     def _utc(cls, value):
@@ -119,6 +121,7 @@ class RequestOffer(_Envelope):
     message_type: Literal["REQUEST_OFFER"] = "REQUEST_OFFER"
     expires_at: datetime
     cargo: CargoSpec
+    kind: Literal["booking", "recovery"] = "booking"  # v2: recovery requests are priced with the carrier's surge
 
     @validator("expires_at", allow_reuse=True)
     def _utc_expires(cls, value):
@@ -163,10 +166,11 @@ class CounterOffer(_Envelope):
 
     message_type: Literal["COUNTER_OFFER"] = "COUNTER_OFFER"
     offer_id: str
-    round: int = Field(1, ge=1, le=1)
+    round: int = Field(1, ge=1, le=2)  # v2: at most two buyer counters per session
     proposed_total_price_minor: int = Field(..., ge=1)
     currency: str = Field("USD", min_length=3, max_length=3)
     expires_at: datetime
+    public_rationale: str = ""  # v2: public reason only (e.g. a cheaper verified rival); never the budget
 
     @validator("expires_at", allow_reuse=True)
     def _utc_expires(cls, value):

@@ -46,7 +46,7 @@ from uagents import Agent, Context, Protocol
 from carrier_agent import holds
 from carrier_agent.inventory import CarrierInventory, LoggedOffer
 from carrier_agent.policy import (
-    Decline, Policy, RecoveryQuote, SailingInventory, decide, decide_counter, decide_recovery,
+    Decline, Policy, RecoveryQuote, SailingInventory, decide, decide_counter, decide_recovery, utilization,
 )
 
 log = logging.getLogger("carrier_agent")
@@ -201,8 +201,9 @@ def counter_precheck(
                           "reason": "recovery offers are one-shot; they cannot be countered"}
     if logged.expires_at <= now:
         return "reject", {"reason_code": RejectReason.OFFER_EXPIRED, "reason": "that offer has expired; request a new quote"}
-    if logged.round != 1 or logged.counters_used >= 1:
-        return "reject", {"reason_code": RejectReason.COUNTER_LIMIT_REACHED, "reason": "only one counter is allowed per offer"}
+    if logged.round >= 3 or logged.counters_used >= 1:  # v2: two buyer counters per session at most
+        return "reject", {"reason_code": RejectReason.COUNTER_LIMIT_REACHED,
+                          "reason": "no further counters are allowed in this negotiation"}
     if msg.currency != logged.currency:
         return "error", {"error_code": ErrorCode.MALFORMED_REQUEST, "detail": f"counter must be in {logged.currency}"}
     return None
@@ -225,7 +226,7 @@ def counter_offer_fields(
         "departure_at": sailing.departure_at,
         "arrival_at": sailing.arrival_at,
         "expires_at": now + timedelta(seconds=policy.offer_ttl_seconds),
-        "round": 2,
+        "round": logged.round + 1,
         "terms": "Negotiated indicative quote; not a capacity hold or booking.",
         "source_kind": "simulated",
     }
@@ -254,7 +255,7 @@ def build_carrier_agent(
             sailings = await inventory.sailings_for(msg.cargo)
 
             def decide_fn(cargo, at):
-                result = decide(cargo, sailings, policy, at)
+                result = decide(cargo, sailings, policy, at, recovery=msg.kind == "recovery")
                 return result if isinstance(result, Decline) else (result, policy)
 
             kind, fields = build_reply(
@@ -308,8 +309,9 @@ def build_carrier_agent(
                     kind, extra = "reject", {"reason_code": RejectReason.INSUFFICIENT_CAPACITY,
                                              "reason": "capacity on that sailing is no longer available"}
                 else:
-                    decision = decide_counter(logged.total_price_minor, logged.quantity,
-                                              msg.proposed_total_price_minor, policy)
+                    opening = await inventory.opening_total(logged.negotiation_id) or logged.total_price_minor
+                    decision = decide_counter(opening, logged.quantity, msg.proposed_total_price_minor, policy,
+                                              current_total=logged.total_price_minor, util=utilization(sailing))
                     if decision.kind == "reject":
                         kind, extra = "reject", {"reason_code": decision.reason_code, "reason": decision.reason}
                     else:

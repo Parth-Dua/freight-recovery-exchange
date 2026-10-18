@@ -125,7 +125,7 @@ class BookingService:
 
         expires_at = max(hold.expires_at, datetime.now(timezone.utc) + STRIPE_MIN_EXPIRY)
         label = (f"{offer['display_name']} sailing {offer['sailing_id']}, {offer['quantity']}x{offer['container_type']} "
-                 f"{offer['origin_port']}->{offer['destination_port']} (simulated freight)")
+                 f"{offer['origin_port']}->{offer['destination_port']}")
         session = await self.payments.create_checkout(
             intent_id=intent_id, request_id=offer["request_id"], offer_id=offer["offer_id"],
             freight_minor=offer["total_price_minor"], fee_minor=fee, currency=offer["currency"],

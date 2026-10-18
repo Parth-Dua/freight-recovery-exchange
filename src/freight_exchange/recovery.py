@@ -19,8 +19,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from dataclasses import asdict, dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Protocol
 
 from freight_contracts import RecoveryCapacityTerms
@@ -81,6 +82,7 @@ class Leg:
     approval_id: str | None = None
     replacement_booking_id: str | None = None
     detail: str | None = None
+    negotiated: bool = False  # v2: the leg holds a negotiated carrier offer directly (no recovery offer split)
 
     @property
     def key(self) -> tuple[str, str, str]:  # deterministic hold order
@@ -247,8 +249,11 @@ class RecoveryStore(Repository):
         """Per leg: a per-booking `offers` row (the replacement booking's offer) and a PROPOSED leg."""
         async with self.pool.connection() as conn, conn.transaction():
             for leg in legs:
-                reply, terms = sources[leg.recovery_offer_id]
                 fact = facts[leg.booking_id]
+                if leg.negotiated:  # the offers row already exists (recorded when the carrier sent it)
+                    await self._insert_leg(conn, recovery_id, attempt, leg)
+                    continue
+                reply, terms = sources[leg.recovery_offer_id]
                 await conn.execute(
                     """INSERT INTO offers (offer_id, request_id, negotiation_id, correlation_id, message_id, carrier_id,
                            sailing_id, container_type, quantity, total_price_minor, currency, departure_at, arrival_at,
@@ -261,15 +266,61 @@ class RecoveryStore(Repository):
                      terms.expires_at, reply.reply.signature,
                      f"Recovery replacement from one-shot offer {terms.offer_id}; booked only once the carrier confirms.",
                      reply.reply.sent_at))
+                await self._insert_leg(conn, recovery_id, attempt, leg)
+
+    @staticmethod
+    async def _insert_leg(conn, recovery_id: str, attempt: int, leg: "Leg") -> None:
+        await conn.execute(
+            """INSERT INTO recovery_legs (recovery_id, attempt, booking_id, recovery_offer_id, offer_id,
+                   carrier_id, sailing_id, quantity, quoted_price_minor, currency, arrival_at, needs_approval,
+                   status)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'PROPOSED')
+               ON CONFLICT DO NOTHING""",
+            (recovery_id, attempt, leg.booking_id, leg.recovery_offer_id, leg.offer_id, leg.carrier_id,
+             leg.sailing_id, leg.quantity, leg.quoted_price_minor, leg.currency, leg.arrival_at,
+             leg.needs_approval))
+
+    async def start_negotiation(self, recovery_id: str, deadline: datetime) -> None:
+        async with self.pool.connection() as conn, conn.transaction():
+            await conn.execute("UPDATE recovery_runs SET status = 'NEGOTIATING', updated_at = now(), "
+                               "negotiation_deadline = coalesce(negotiation_deadline, %s) WHERE recovery_id = %s",
+                               (deadline, recovery_id))
+            await _event(conn, "RECOVERY_NEGOTIATING", "recovery_run", recovery_id, correlation_id=recovery_id,
+                         payload={"deadline": deadline.isoformat()})
+
+    async def record_negotiated_offers(self, recovery_id: str, sources: dict) -> None:
+        """Final negotiated offers as the run's claim set (audit + FK for legs); bids are not holds."""
+        async with self.pool.connection() as conn, conn.transaction():
+            await conn.execute("UPDATE recovery_runs SET negotiation_closed_at = now() WHERE recovery_id = %s",
+                               (recovery_id,))
+            for offer_id, src in sources.items():
+                o = src.offer
                 await conn.execute(
-                    """INSERT INTO recovery_legs (recovery_id, attempt, booking_id, recovery_offer_id, offer_id,
-                           carrier_id, sailing_id, quantity, quoted_price_minor, currency, arrival_at, needs_approval,
-                           status)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'PROPOSED')
-                       ON CONFLICT DO NOTHING""",
-                    (recovery_id, attempt, leg.booking_id, leg.recovery_offer_id, leg.offer_id, leg.carrier_id,
-                     leg.sailing_id, leg.quantity, leg.quoted_price_minor, leg.currency, leg.arrival_at,
-                     leg.needs_approval))
+                    """INSERT INTO recovery_offers (offer_id, recovery_id, message_id, carrier_id, sailing_id,
+                           container_type, capacity_units, total_price_minor, currency, departure_at, arrival_at,
+                           expires_at, eligible_booking_ids, status, carrier_signature)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'VALID', %s)
+                       ON CONFLICT (offer_id) DO NOTHING""",
+                    (offer_id, recovery_id, o.message_id, o.carrier_id, o.sailing_id, o.container_type, o.quantity,
+                     o.total_price_minor, o.currency, o.departure_at, o.arrival_at, o.expires_at, [src.booking_id],
+                     o.signature))
+
+    async def posting_order(self, booking_ids: list[str]) -> dict[str, int]:
+        async with self.pool.connection() as conn:
+            rows = await (await conn.execute(
+                "SELECT booking_id FROM bookings WHERE booking_id = ANY(%s) ORDER BY created_at, booking_id",
+                (booking_ids,))).fetchall()
+        return {r[0]: i for i, r in enumerate(rows, 1)}
+
+    async def clearing_done(self, recovery_id: str, proposal: RecoveryProposal, summary: dict) -> None:
+        async with self.pool.connection() as conn, conn.transaction():
+            await _event(conn, "CLEARING_DONE", "recovery_run", recovery_id, correlation_id=recovery_id,
+                         payload=_jsonable({"objective": proposal.objective, "input_version": proposal.input_version,
+                                            "assignments": [[a.booking_id, a.sailing_id, a.quantity]
+                                                            for a in proposal.assignments],
+                                            "unrecovered": list(proposal.unrecovered_booking_ids),
+                                            "needs_approval": list(proposal.needs_approval_booking_ids),
+                                            "baseline": proposal.baseline, "negotiation": summary}))
 
     async def update_leg(self, recovery_id: str, attempt: int, leg: Leg) -> None:
         async with self.pool.connection() as conn, conn.transaction():
@@ -345,7 +396,8 @@ def proposal_from_snapshot(snapshot: dict) -> RecoveryProposal:
         unrecovered_booking_ids=tuple(p["unrecovered_booking_ids"]),
         needs_approval_booking_ids=tuple(p["needs_approval_booking_ids"]),
         explanations=dict(p["explanations"]), verified_capacity=dict(p["verified_capacity"]),
-        input_version=p["input_version"])
+        input_version=p["input_version"], objective=dict(p.get("objective") or {}),
+        baseline=dict(p.get("baseline") or {}))
 
 
 def outcome_from_snapshot(recovery_id: str, status: str, snapshot: dict | None, detail: str | None) -> RecoveryOutcome:
@@ -369,16 +421,20 @@ def outcome_from_snapshot(recovery_id: str, status: str, snapshot: dict | None, 
                            unrecovered_booking_ids=tuple(committed["unrecovered_booking_ids"]), diagnostics=diagnostics)
 
 
-def legs_from_proposal(proposal: RecoveryProposal,
-                       sources: dict[str, tuple[RecoveryReplyOutcome, RecoveryCapacityTerms]]) -> list[Leg]:
+def legs_from_proposal(proposal: RecoveryProposal, sources: dict) -> list[Leg]:
+    from freight_exchange.recovery_negotiation import NegotiatedSource
     needs = set(proposal.needs_approval_booking_ids)
     legs = []
     for a in proposal.assignments:
-        _, terms = sources[a.offer_id]
-        legs.append(Leg(booking_id=a.booking_id, recovery_offer_id=a.offer_id, offer_id=f"{a.offer_id}.{a.booking_id}",
+        source = sources[a.offer_id]
+        negotiated = isinstance(source, NegotiatedSource)
+        currency = source.offer.currency if negotiated else source[1].currency
+        # a negotiated offer is the carrier's own offer for exactly this booking: hold it as-is
+        legs.append(Leg(booking_id=a.booking_id, recovery_offer_id=a.offer_id,
+                        offer_id=a.offer_id if negotiated else f"{a.offer_id}.{a.booking_id}",
                         carrier_id=a.carrier_id, sailing_id=a.sailing_id, quantity=a.quantity,
-                        quoted_price_minor=a.quoted_price_minor, currency=terms.currency, arrival_at=a.arrival_at,
-                        needs_approval=a.booking_id in needs))
+                        quoted_price_minor=a.quoted_price_minor, currency=currency, arrival_at=a.arrival_at,
+                        needs_approval=a.booking_id in needs, negotiated=negotiated))
     return sorted(legs, key=lambda leg: leg.key)
 
 
@@ -445,6 +501,8 @@ class AcpRecoverySeam:
     # ---- phase 6: one-shot offers -> proposal ---------------------------------------
     async def _propose(self, recovery_id: str, sailing_id: str, stranded: list[DisruptedBooking], *,
                        attempt: int) -> tuple[RecoveryProposal, dict]:
+        if os.getenv("RECOVERY_NEGOTIATION_ENABLED", "true").lower() != "false":
+            return await self._propose_negotiated(recovery_id, sailing_id, stranded, attempt=attempt)
         await self.store.set_status(recovery_id, "OFFERS_REQUESTED")
         carriers = await self.store.active_carriers()
         exchange = self.client.identity.address
@@ -482,6 +540,44 @@ class AcpRecoverySeam:
         log_event("recovery_proposed", recovery_id=recovery_id, sailing_id=sailing_id, **summary)
         return proposal, sources
 
+    async def _propose_negotiated(self, recovery_id: str, sailing_id: str, stranded: list[DisruptedBooking], *,
+                                  attempt: int) -> tuple[RecoveryProposal, dict]:
+        """v2: post the public board, negotiate per displaced booking x carrier in parallel (60 s max),
+        freeze the final signed offers, then clear jointly (five stages) and record the first-come baseline."""
+        from freight_exchange.recovery_negotiation import RecoveryNegotiator, recovery_timeout_seconds
+        negotiator = RecoveryNegotiator(self.store, self.client_for_negotiation(), clock=self.clock)
+        deadline = self.clock() + timedelta(seconds=recovery_timeout_seconds())
+        await self.store.start_negotiation(recovery_id, deadline)
+        await negotiator.post_board(recovery_id, stranded)
+        offers, sources, nsum = await negotiator.negotiate(recovery_id, stranded, deadline)
+        await self.store.record_negotiated_offers(recovery_id, sources)
+        await self.store.set_status(recovery_id, "CLEARING")
+        if hasattr(self.allocation, "_posting_order"):
+            self.allocation._posting_order = await self.store.posting_order([b.booking_id for b in stranded])
+        proposal = await self.allocation.allocate(recovery_run_id=recovery_id, stranded=stranded, offers=offers)
+        summary = {"stranded": len(stranded), "attempt": attempt, "sessions": nsum.sessions,
+                   "offers_valid": len(offers), "sessions_expired": nsum.expired,
+                   "negotiation_seconds": nsum.elapsed_s, "negotiation_closed_early": nsum.closed_early,
+                   "recovered": proposal.recovered_count, "unrecovered": len(proposal.unrecovered_booking_ids),
+                   "baseline_recovered": proposal.baseline.get("recovered"),
+                   "must_deliver_recovered": proposal.objective.get("must_deliver")}
+        await self.store.clearing_done(recovery_id, proposal, summary)
+        await self.store.save_snapshot(
+            recovery_id, status="PROPOSED", input_version=proposal.input_version or None,
+            snapshot={"stranded": [asdict(b) for b in stranded], "proposal": asdict(proposal), "summary": summary},
+            event_payload={"input_version": proposal.input_version, **summary})
+        log_event("recovery_proposed", recovery_id=recovery_id, sailing_id=sailing_id, **summary)
+        return proposal, sources
+
+    def client_for_negotiation(self):
+        """The negotiation engine sends REQUEST_OFFER / COUNTER_OFFER with the Exchange identity."""
+        from freight_exchange.carrier_client import CarrierClient
+        from freight_exchange.config import carrier_timeout_seconds
+        # Generous per-message timeout: messages to one carrier queue (one in flight per carrier) and
+        # the overall 60 s recovery deadline bounds the whole negotiation anyway.
+        return CarrierClient(self.client.identity, transport=self.client.transport,
+                             timeout_s=max(carrier_timeout_seconds(), 30.0), clock=self.clock)
+
     # ---- phase 7: holds -> approval -> confirmation ---------------------------------
     async def _commit(self, recovery_id: str, sailing_id: str, stranded: list[DisruptedBooking],
                       proposal: RecoveryProposal, sources: dict, *, attempt: int) -> RecoveryOutcome:
@@ -497,7 +593,7 @@ class AcpRecoverySeam:
                 carriers[leg.carrier_id], offer_id=leg.offer_id, request_id=fact.request_id, buyer_id=fact.buyer_id,
                 quantity=leg.quantity, idempotency_key=f"rh:{recovery_id}:{attempt}:{leg.booking_id}:{leg.recovery_offer_id}",
                 ttl_seconds=HOLD_TTL_S, negotiation_id=recovery_id, correlation_id=recovery_id,
-                recovery_offer_id=leg.recovery_offer_id)
+                recovery_offer_id=None if leg.negotiated else leg.recovery_offer_id)
             if result.ok:
                 leg.status, leg.hold_id, leg.hold_expires_at = "HELD", result.hold_id, result.expires_at
             else:
@@ -678,6 +774,14 @@ def real_approval_seam(pool: AsyncConnectionPool) -> ApprovalSeam | None:
     return TigerApprovalSeam(TigerApprovalStore(pool))
 
 
+def _notifier(pool: AsyncConnectionPool, agent_uri: str | None):
+    """Gateway cards for buyers who chat through the gateway; legacy text for older chats."""
+    if not agent_uri:
+        return None
+    from freight_exchange.gateway_notify import GatewayRecoveryNotifier
+    return GatewayRecoveryNotifier(pool, legacy=AsiRecoveryNotifier(pool, agent_uri))
+
+
 async def build_recovery_seam(identity, pool: AsyncConnectionPool, *, agent_uri: str | None = None,
                               commit: bool = True) -> AcpRecoverySeam:
     """Production wiring: Tisya's Tiger-backed DisruptionSeam, OR-Tools AllocationSeam and ApprovalSeam,
@@ -699,5 +803,5 @@ async def build_recovery_seam(identity, pool: AsyncConnectionPool, *, agent_uri:
         allocation=SolverAllocationSeam(TigerCapacityReader(pool)),
         holds=AcpHoldClient(identity, audit=audit) if commit else None,
         approval=real_approval_seam(pool),
-        notifier=AsiRecoveryNotifier(pool, agent_uri) if agent_uri else None,
+        notifier=_notifier(pool, agent_uri),
     )

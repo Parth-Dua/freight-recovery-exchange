@@ -11,14 +11,12 @@ Before doing anything, read in this order:
 
 ## Hard rules
 
-- Only edit folders owned by the person you are working with. If a change is needed in
-  someone else's folder, write the exact change under `NEEDS-FROM-<owner>` in the PR and
-  tell the user to ask the owner.
-- Never commit or push to `main`. Branch from fresh `main` as `<name>/<feature>`, open a PR
-  with `gh pr create --base main`, and never merge unless the user explicitly says to.
-- Before opening a PR: merge `origin/main`, then run every affected test suite.
-- Seams in `packages/freight_seams/` and contracts in `packages/freight_contracts/` are
-  additive only, and need the other owner's yes before any signature changes.
+- **Process since 2026-10-18 (user decision):** Parth owns the whole build. Work directly on `main`
+  in `~/Downloads/LAHacksAI2026`, commit and push to `main`, no PRs or approvals needed. Work the
+  phases in `docs/specs_2/` in order (PRD: `docs/PRD.md`; old PRD: `docs/oldPRD.md`).
+- Anything needing the user goes in `docs/critical_alerts.md`, with current testing steps kept up
+  to date there.
+- Before each push: run every affected test suite.
 - A test against a fake is a unit test. Never present it as Agentverse, ASI:One, ACP,
   Stripe or Tiger evidence.
 - Never commit `.env`, and never print a key, seed or `AGENT_URI`. Check that a secret is

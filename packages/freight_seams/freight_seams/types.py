@@ -33,6 +33,8 @@ class DisruptedBooking:
     original_price_minor: int
     currency: str
     max_additional_cost_minor: int = 0
+    must_deliver: bool = False  # v2: buyer-declared clearing priority (exchange-only, never sent to carriers)
+    priority: str = "balanced"  # v2: buyer's ranking preference, used by the first-come baseline
 
     def __post_init__(self) -> None:
         if self.quantity < 1:
@@ -116,6 +118,9 @@ class RecoveryOffer:
     arrival_at: datetime
     expires_at: datetime
     eligible_booking_ids: tuple[str, ...] = ()
+    # True for a negotiated offer: the price holds only for exactly `capacity_units` (the carrier refuses a
+    # hold for any other quantity), so the solver takes all of it or none of it.
+    exact_quantity: bool = False
 
     def __post_init__(self) -> None:
         if self.capacity_units < 1:
@@ -146,6 +151,8 @@ class RecoveryProposal:
     explanations: dict[str, str] = field(default_factory=dict)
     verified_capacity: dict[str, int] = field(default_factory=dict)
     input_version: str = ""
+    objective: dict[str, int] = field(default_factory=dict)  # v2: value fixed at each lexicographic stage
+    baseline: dict = field(default_factory=dict)  # v2: first-come-first-served comparison (simulated only)
 
     @property
     def recovered_count(self) -> int:
