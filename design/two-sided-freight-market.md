@@ -396,11 +396,11 @@ renegotiating. Until then they are his. The two lanes meet only through Tiger ta
   loop.
 - Carrier pricing: read the new policy keys and apply the formula in section 9.
 - Buyer agent counter strategy.
-- Chat flow: capture the new buyer fields, call the card functions, include the shipment link.
+- Chat flow: capture the new buyer fields, include the shipment link.
+- Cards end to end: the card test, the SDK patch, and the setup, offers, approval and status cards (each with a text version).
 - Recovery bids with surge (builds on #16), phase 7 confirm with the approval gate.
 - Negotiation events written to `market_events` in the agreed shape.
 - Pairing rule, must-deliver clearing and the first come, first served baseline.
-- SDK patch so cards reach ASI:One.
 - Agentverse profiles for the exchange agent and carriers.
 
 ### Tisya (accountable): everything people see
@@ -409,8 +409,6 @@ renegotiating. Until then they are his. The two lanes meet only through Tiger ta
   console).
 - Market view.
 - Buyer shipment page, including its link token and access check.
-- Card designs and payloads behind `CardSeam`: setup, offers, approval, status, each with a text
-  version.
 - Tiger analytics queries and the continuous aggregate behind the charts.
 - Devpost, video script, demo scenario.
 
@@ -425,7 +423,6 @@ in chat and she starts from wherever he left off.
 | Buyer counter strategy | Inputs are offers plus the buyer's private limits, output is a price. No transport involved. | `buyer_counter(...)`, pure function |
 | Negotiation event logger | The market view is its only reader, so its owner can shape it. | `log_negotiation_step(...)` next to `emit_event` |
 | Clearing trigger rule | Decision only; Parth's loop calls it. | `ready_to_clear(sessions, now)` |
-| SDK card patch | Tisya owns the cards already. | One function in `asi/`, called once at startup |
 | Agentverse profile copy | Writing only; Parth still publishes them. | Text for 6 profiles |
 | Live test runs and the shared chat | Needs ASI:One access, not code. | Full run, bug list to Parth |
 
@@ -442,7 +439,7 @@ Agree these in the first hour, then work apart.
 | `negotiation_sessions` columns (section 6) | Parth | Market view |
 | Negotiation event names and payloads in `market_events`: NEGOTIATION_OPENED, OFFER_SENT, COUNTER_SENT, OFFER_ACCEPTED, OFFER_REJECTED, NEGOTIATION_CLOSED, CLEARING_DONE (with baseline). `correlation_id` is the session id. | Parth | Market view, analytics |
 | New `carrier_policies` keys (section 8 names) | Tisya, from the preferences page | Carrier agents |
-| Card functions (`CardSeam`) and `shipment_link(booking_id)` | Tisya | Chat flow |
+| `shipment_link(booking_id)` | Tisya | Chat flow |
 | Optional `must_deliver` on `DisruptedBooking` | Both agree, additive | Solver |
 
 ### Checkpoints (PDT)
