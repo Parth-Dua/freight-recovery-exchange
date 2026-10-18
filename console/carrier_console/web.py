@@ -134,7 +134,7 @@ def _hero(s: SailingRow, carrier_id: str) -> str:
     <div class="big mono">{escape(s.sailing_id)}</div>
     <p class="lede">{escape(s.origin_port)} → {escape(s.destination_port)} · departs <span class="mono">{s.departure_at:%d %b %H:%M}</span> ·
       {_booked(s)} of {s.total_slots} exchange slots booked · {s.committed_bookings} bookings</p>
-    <div style="margin-top: 24px;">{ui.ship(_booked(s), carrier_id, f"{_booked(s)} of {s.total_slots} exchange slots booked")}</div>
+    <div style="margin-top: 24px;">{ui.ship(_booked(s), s.total_slots, carrier_id, f"{_booked(s)} of {s.total_slots} exchange slots booked")}</div>
   </div>
   <div class="side" style="display: flex; flex-direction: column; gap: 16px;">
     {ui.notification("warning", "Hormuz advisory on this route", "Vessel security incident in the strait. Review before departure.")}
@@ -207,7 +207,7 @@ async def sailing_detail(carrier_id: str, sailing_id: str) -> HTMLResponse:
       <p class="lede">{escape(s.carrier_name)} · {escape(s.origin_port)} → {escape(s.destination_port)}</p></div>
     <div class="side">{_status_tag(s.status)}{" " + ui.tag("Hormuz advisory", "magenta") if event else ""}</div>
   </div>
-  <div style="max-width: 960px;">{ui.ship(_booked(s), carrier_id, f"{_booked(s)} of {s.total_slots} exchange slots booked")}</div>
+  <div style="max-width: 960px;">{ui.ship(_booked(s), s.total_slots, carrier_id, f"{_booked(s)} of {s.total_slots} exchange slots booked")}</div>
   <dl class="facts" style="margin: 0;">
     <div><dt>Departs</dt><dd class="mono">{s.departure_at:%d %b %H:%M}</dd></div>
     <div><dt>Arrives</dt><dd class="mono">{s.arrival_at:%d %b %H:%M}</dd></div>
@@ -322,8 +322,13 @@ def _risk_section(event: RiskEvent, touched: list[SailingRow], carrier_id: str) 
         f'<input type="hidden" name="risk_event_id" value="{escape(event.risk_event_id)}">'
         f'<button class="cds--btn cds--btn--danger--ghost cds--btn--sm" type="submit">Review withdrawal</button></form>',
     ] for s in touched]
+    lane = ""
+    if touched and "AEJEA-INBOM" in event.affected_corridors:
+        lane = ui.lane_map([{"label": ", ".join(s.sailing_id for s in touched), "color": ui.CARRIER_COLORS.get(carrier_id, "#F26B1D"),
+                             "dy": 0}], caption="Your sailings on this lane pass through the advisory zone.")
     return f"""
-<section class="stack" style="gap: 16px;">
+<section class="stack" style="gap: 24px;">
+  {lane}
   <div>
     <p class="muted" style="margin: 0;"><span class="hz"></span> {escape(event.severity.upper())} · {escape(event.category.replace("_", " "))} · simulated</p>
     <h2 style="font-size: 1.75rem; font-weight: 400; margin: 8px 0 0;">{escape(event.region_code.replace("-", " ").title())}</h2>

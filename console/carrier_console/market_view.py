@@ -82,6 +82,18 @@ def market_shell(body: str, *, snap: MarketSnapshot | None, step: str, xray: boo
 </body></html>"""
 
 
+def _routes(snap: MarketSnapshot, carrier_ids: list[str], *, solid: bool) -> list[dict]:
+    """The withdrawn sailing crossed out, plus one route per replacement sailing, nudged apart."""
+    routes = [{"label": f"{snap.sailing_id} withdrawn", "color": ui.CARRIER_COLORS.get(snap.withdrawn_by, "#F26B1D"),
+               "dash": "6 6", "crossed": True, "dy": 0}]
+    for i, cid in enumerate(dict.fromkeys(carrier_ids)):
+        c = snap.carrier(cid)
+        when = f", arrives {c.arrival_at:%d %b}" if c.arrival_at else ""
+        routes.append({"label": f"{c.sailing_id or c.name.split()[0]}{when}", "color": ui.CARRIER_COLORS.get(cid, "#C6C6C6"),
+                       "dash": "" if solid else "2 6", "dy": 26 * (i + 1) * (1 if i % 2 == 0 else -1)})
+    return routes
+
+
 def _label(snap: MarketSnapshot, booking_id: str) -> str:
     s = snap.booking(booking_id)
     return f"Buyer {s.label}" if s else booking_id
@@ -108,10 +120,12 @@ def disruption(snap: MarketSnapshot) -> str:
   <div><div class="big mono">{escape(snap.sailing_id)} withdrawn</div>
     <p class="lede">{escape(snap.carrier(snap.withdrawn_by).name)} pulled the sailing at <span class="mono">{snap.withdrawn_at:%H:%M:%S}</span>
       over the Hormuz advisory. {total} containers have no ship.</p></div>
-  <div class="row" style="align-items: flex-end;">
-    <div class="grow">{ui.ship(0, snap.withdrawn_by, "exchange slots now empty")}
+  <div class="row" style="align-items: flex-start;">
+    <div class="grow" style="flex-basis: 480px;">{ui.ship(0, max(sum(s.quantity for s in snap.stranded), 4), snap.withdrawn_by, "Its exchange slots are now empty")}
       <p class="cds--label" style="margin: 32px 0 12px;">Stranded containers</p>
       <div style="display: flex; gap: 16px; flex-wrap: wrap;">{containers}</div></div>
+    <div class="grow" style="flex-basis: 480px;">{ui.lane_map(_routes(snap, [s.carrier_id for s in snap.sessions], solid=False),
+        caption="Crossed out: the withdrawn sailing. Dotted: sailings with space that can still make the deadlines.")}</div>
   </div>
   {ui.table("Stranded bookings", "Posted to the board in this order. Prices and limits stay private.",
             ["Buyer", "Booking", "Containers", "Due", "Must deliver"], rows, "Nobody was on this sailing.")}
@@ -298,6 +312,8 @@ def allocation(snap: MarketSnapshot) -> str:
     <div style="background: var(--cds-button-primary); color: #fff;"><p class="cds--label" style="color: #fff;">Exchange, all at once</p>
       <div class="n mono">{ours} / {total}</div><p>Every stranded booking and every offer solved together, must-deliver first.</p></div>
   </div>
+  {ui.lane_map(_routes(snap, [l.carrier_id for l in snap.legs if l.status != "RELEASED"], solid=True),
+               caption="The withdrawn sailing, and the sailings the stranded containers moved onto.")}
   {ui.table("Where each booking goes", "Prices per container. Only carrier-confirmed space counts as rebooked.",
             ["Buyer", "Containers", "New sailing", "Price", "Status"], rows, "No assignments yet.")}
 </div>"""

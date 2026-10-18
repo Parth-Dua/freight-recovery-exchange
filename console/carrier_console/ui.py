@@ -7,7 +7,9 @@ advisory map. Pages pass already-escaped HTML fragments in.
 
 from __future__ import annotations
 
+import re
 from html import escape
+from pathlib import Path
 
 CARBON_CSS = "https://unpkg.com/@carbon/styles@1.60.0/css/styles.min.css"
 FONTS = ("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600"
@@ -31,8 +33,7 @@ p, td, dd, li { overflow-wrap: anywhere; }
 .row { display: flex; gap: 48px; flex-wrap: wrap; }
 .row > .grow { flex: 999 1 560px; min-width: 0; }
 .row > .side { flex: 1 1 320px; min-width: 0; }
-.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1px;
-         background: var(--cds-border-subtle-01); }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
 .facts > div { background: var(--cds-layer-01); padding: 20px 24px; min-width: 0; }
 .facts dt { font-size: .875rem; color: var(--cds-text-secondary); margin: 0 0 8px; }
 .facts dd { margin: 0; font-size: 1.25rem; }
@@ -46,14 +47,7 @@ p, td, dd, li { overflow-wrap: anywhere; }
 .ct.empty { background: none; border: 1px dashed var(--cds-border-strong-01); }
 .ct.empty::before, .ct.empty::after { display: none; }
 .cts { display: inline-flex; gap: 3px; }
-.ship { margin: 0; padding-top: 28px; }
-.hull { position: relative; }
-.hull img { display: block; width: 100%; height: auto; }
-.hull .slot { position: absolute; width: 2.9%; height: 6.4%; box-sizing: border-box; border: 1px solid rgba(0,0,0,.5);
-              background-image: repeating-linear-gradient(90deg, rgba(0,0,0,.22) 0 2px, transparent 2px 5px); }
-.hull .mark { position: absolute; left: 64.1%; top: 49.6%; width: 6.9%; height: 14.6%; border: 2px solid #F26B1D; }
-.hull .lead { position: absolute; left: 67.5%; top: -28px; bottom: 50.4%; border-left: 1px solid #F26B1D; }
-.hull .note { position: absolute; left: calc(67.5% + 8px); top: -28px; font-size: .75rem; color: #F26B1D; white-space: nowrap; }
+.ship { margin: 0; }
 .hz { display: inline-block; width: 16px; height: 10px; border: 1px solid #E5399B; vertical-align: middle;
       background: repeating-linear-gradient(45deg, #E5399B 0 2px, transparent 2px 5px); }
 th { white-space: nowrap; }
@@ -142,19 +136,86 @@ def button_link(href: str, label: str, kind: str = "primary") -> str:
     return f'<a class="cds--btn cds--btn--{kind}" href="{escape(href)}">{escape(label)}</a>'
 
 
-# The ship drawing's four exchange slots (x%, y% of the image), filled bottom tier first.
-_SLOTS = ((64.42, 57.0), (67.72, 57.0), (64.42, 50.4), (67.72, 50.4))
+# --- ship profile -----------------------------------------------------------------------------
+
+_SHIP_SVG = (Path(__file__).parent / "static" / "ship.svg").read_text()
+_DECK = {"#3A3E44", "#30343A", "#464B51", "#373B41", "#1B1D20"}  # deck container fills in the drawing
+_DECK_START, _DECK_END = 158.0, 1075.0  # x range of the deck containers, in the drawing's coordinates
 
 
-def ship(booked: int, carrier_id: str, note: str) -> str:
-    """Side profile of the sailing's ship (CC0 drawing, recolored) with its exchange slots
-    filled in to match the booking count."""
+def ship(booked: int, total: int, carrier_id: str, note: str) -> str:
+    """Side profile of the sailing's ship (CC0 drawing, recolored). The deck is split into equal
+    bays, one per exchange slot, from bow to stern; booked bays are filled in the carrier's color,
+    so 1 of 4 booked fills a quarter of the ship."""
     color = CARRIER_COLORS.get(carrier_id, "#8D8D8D")
-    filled = "".join(
-        f'<span class="slot" style="left: {x}%; top: {y}%; background-color: {color};"></span>'
-        for x, y in _SLOTS[:max(0, min(booked, len(_SLOTS)))]
+    bays = max(total, 1)
+    width = (_DECK_END - _DECK_START) / bays
+
+    def paint(match: re.Match) -> str:
+        path = match.group(0)
+        fill = re.search(r'fill="([^"]+)"', path)
+        start = re.search(r'd="m([\d.]+),', path)
+        if not fill or fill.group(1) not in _DECK or not start or float(start.group(1)) < _DECK_START:
+            return path
+        bay = min(int((float(start.group(1)) - _DECK_START) // width), bays - 1)
+        new = color if bay < booked else "#2A2D31"
+        return path.replace(f'fill="{fill.group(1)}"', f'fill="{new}"', 1)
+
+    drawing = re.sub(r"<path[^>]*/>", paint, _SHIP_SVG)
+    drawing = drawing.replace("<svg ", f'<svg role="img" aria-label="Ship with {booked} of {total} exchange slots booked" '
+                                       'style="display: block; width: 100%; height: auto;" ', 1)
+    return f"""<figure class="ship"><p class="mono" style="margin: 0 0 8px; font-size: .875rem; color: {color};">{escape(note)}</p>
+{drawing}</figure>"""
+
+
+# --- map ------------------------------------------------------------------------------------
+# Coastlines plotted from real coordinates (x = (lon - 48) * 40, y = (31 - lat) * 40), simplified.
+
+_ARABIA = ("M0 56 L16 84 L64 156 L88 188 L112 204 L124 196 L144 204 L144 252 L132 268 L184 272 L240 268 L268 248 "
+           "L282 240 L296 228 L316 212 L324 196 L334 185 L338 198 L332 220 L334 240 L344 260 L350 268 L384 290 L424 296 "
+           "L456 328 L472 340 L452 384 L424 416 L392 472 L352 512 L296 528 L240 564 L168 616 L80 640 L0 680 Z")
+_NORTH = ("M0 0 L1200 0 L1200 916 L1180 916 L1136 884 L1112 840 L1080 760 L1060 700 L1032 624 L1008 560 L996 504 "
+          "L994 476 L992 424 L984 380 L968 388 L912 412 L880 400 L840 348 L864 330 L888 320 L836 316 L816 296 L784 280 "
+          "L760 248 L744 224 L640 228 L572 236 L504 228 L440 224 L392 216 L372 204 L356 164 L332 152 L292 176 L240 172 "
+          "L184 144 L140 124 L112 84 L92 72 L20 40 L0 40 Z")
+_HORMUZ = "M316 188 L336 170 L356 166 L366 192 L352 212 L336 204 Z"
+_LANE = [(281, 239), (308, 210), (332, 178), (354, 196), (384, 236), (440, 276), (560, 336), (720, 404), (880, 456), (992, 480)]
+_PORTS = {"AEJEA": (281, 239), "INBOM": (994, 482), "OMSOH": (349, 266), "PKKHI": (760, 247), "INMUN": (868, 330)}
+
+
+def lane_map(routes: list[dict], *, view: str = "lane", caption: str = "") -> str:
+    """Jebel Ali to Mumbai through the Strait of Hormuz. Each route is drawn along the same lane,
+    nudged apart so they read as separate sailings: {"label", "color", "dash", "crossed", "dy"}."""
+    box = {"lane": "220 110 850 440", "strait": "230 130 300 200"}[view]
+    lines, tags = [], []
+    for r in routes:
+        dy = r.get("dy", 0)
+        # sailings share the lane through the strait, then fan out in open sea
+        pts = " L".join(f"{x} {y + dy * min(1.0, max(0.0, (i - 4) / 2)):.0f}" for i, (x, y) in enumerate(_LANE))
+        lines.append(f'<path d="M{pts}" fill="none" stroke="{r["color"]}" stroke-width="3" '
+                     f'stroke-dasharray="{r.get("dash", "")}" stroke-linecap="round" stroke-linejoin="round"></path>')
+        lx, ly = 760, 404 + dy + (24 if dy > 0 else -12 if dy < 0 else -12)
+        tags.append(f'<text x="{lx}" y="{ly}" fill="{r["color"]}" font-size="15" text-anchor="middle" '
+                    f'font-family="IBM Plex Mono" paint-order="stroke" stroke="#0E0F11" stroke-width="5">{escape(r["label"])}</text>')
+        if r.get("crossed"):
+            cx, cy = 500, 306
+            lines.append(f'<path d="M{cx - 12} {cy - 12} L{cx + 12} {cy + 12} M{cx + 12} {cy - 12} L{cx - 12} {cy + 12}" '
+                         f'stroke="#FA4D56" stroke-width="4" stroke-linecap="round"></path>')
+    ports = "".join(
+        f'<circle cx="{x}" cy="{y}" r="5" fill="#F4F4F4"></circle>'
+        f'<text x="{x + (-62 if code == "AEJEA" else 10)}" y="{y + (22 if code in ("AEJEA", "INBOM") else -8)}" '
+        f'fill="#F4F4F4" font-size="15" font-family="IBM Plex Mono">{code}</text>'
+        for code, (x, y) in _PORTS.items() if code in ("AEJEA", "INBOM")
     )
-    return f"""<figure class="ship"><div class="hull">
-  <img src="/static/ship.svg" alt="Container ship side profile. {booked} of its {len(_SLOTS)} exchange slots, mid-ship, are booked.">
-  {filled}<span class="mark"></span><span class="lead"></span><span class="note mono">{escape(note)}</span>
-</div></figure>"""
+    return f"""<figure style="margin: 0;">
+<svg viewBox="{box}" role="img" aria-label="Map: Jebel Ali to Mumbai through the Strait of Hormuz, with the advisory zone hatched" style="display: block; width: 100%; height: auto; background: #0E0F11;">
+  <defs><pattern id="hz-map" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2.2" height="6" fill="#E5399B"></rect></pattern></defs>
+  <rect x="0" y="0" width="1200" height="920" fill="#0E0F11"></rect>
+  <path d="{_ARABIA}" fill="#1E2023" stroke="#4D5358" stroke-width="1"></path>
+  <path d="{_NORTH}" fill="#1E2023" stroke="#4D5358" stroke-width="1"></path>
+  <path d="{_HORMUZ}" fill="url(#hz-map)" stroke="#E5399B" stroke-width="1.5"></path>
+  <text x="370" y="160" fill="#FF7EB6" font-size="15">Hormuz advisory</text>
+  <g fill="#6F6F6F" font-size="13" letter-spacing="3"><text x="560" y="150">IRAN</text><text x="660" y="200">PAKISTAN</text>
+    <text x="380" y="420">OMAN</text><text x="1040" y="300">INDIA</text><text x="560" y="500" font-style="italic" letter-spacing="1">Arabian Sea</text></g>
+  {"".join(lines)}{ports}{"".join(tags)}
+</svg>{f'<figcaption class="muted" style="margin-top: 8px; font-size: .875rem;">{escape(caption)}</figcaption>' if caption else ""}</figure>"""
