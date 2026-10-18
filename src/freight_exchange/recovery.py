@@ -669,13 +669,13 @@ class AsiRecoveryNotifier:
 
 
 def real_approval_seam(pool: AsyncConnectionPool) -> ApprovalSeam | None:
-    """Tisya's Tiger-backed ApprovalSeam once it is on main (PR #15); until then None, which keeps every
-    over-allowance booking waiting until its hold lapses (never confirmed without approval)."""
+    """Tisya's Tiger-backed ApprovalSeam (asi/approvals.py). None only if it is unavailable, which keeps
+    every over-allowance booking waiting until its hold lapses (never confirmed without approval)."""
     try:
-        from freight_exchange.asi.approvals import TigerApprovalSeam
+        from freight_exchange.asi.approvals import TigerApprovalSeam, TigerApprovalStore
     except ImportError:
         return None
-    return TigerApprovalSeam(pool)
+    return TigerApprovalSeam(TigerApprovalStore(pool))
 
 
 async def build_recovery_seam(identity, pool: AsyncConnectionPool, *, agent_uri: str | None = None,

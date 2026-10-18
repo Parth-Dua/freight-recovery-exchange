@@ -30,6 +30,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, MessagesState, StateGraph
 
 from freight_exchange import responses as r
+from freight_exchange.asi.approvals import TigerApprovalStore, handle_approval_reply, is_approval_reply
 from freight_exchange.booking import BookingService, claim_secret_from
 from freight_exchange.booking_status import TigerBookingSeam
 from freight_exchange.hold_client import AcpHoldClient
@@ -52,7 +53,7 @@ SERVICE_UNAVAILABLE_REPLY = "The quote service is temporarily unavailable. Nothi
 DUPLICATE_WINDOW_S = 120
 DUPLICATE_WAIT_S = 45
 DATA_ROUTES = {r.ROUTE_CORRIDORS, r.ROUTE_QUOTES, r.ROUTE_REQUOTE, r.ROUTE_SELECT, r.ROUTE_RECOVERY,
-               r.ROUTE_BOOKING, r.ROUTE_PAID, r.ROUTE_CANCEL}
+               r.ROUTE_BOOKING, r.ROUTE_PAID, r.ROUTE_CANCEL, "recovery_approval"}
 _BOOK_VERB = re.compile(r"\b(book|reserve)\b", re.IGNORECASE)
 _ALLOWANCE = re.compile(r"\b(?:auto[- ]?rebook|rebook|recover\w*|extra)\b\D{0,40}?\$\s?(\d[\d,]*)", re.IGNORECASE)
 
@@ -98,8 +99,13 @@ def _last_human_text(state: ExchangeState) -> str:
     return ""
 
 
+ROUTE_APPROVAL = "recovery_approval"
+
+
 def _route_with_context(text: str, pending: str | None) -> tuple[str, str]:
     """Return (route, text to parse). A pending clarification absorbs short follow-ups."""
+    if is_approval_reply(text):  # first: "approve the rebooking" must never reach booking or recovery
+        return ROUTE_APPROVAL, text
     route = r.classify(text)
     if pending and route in (r.ROUTE_UNSUPPORTED, r.ROUTE_QUOTES, r.ROUTE_CORRIDORS, r.ROUTE_SELECT):
         m = _BARE_NUMBER.match(text)
@@ -261,6 +267,16 @@ async def status(state: ExchangeState, turn: dict) -> dict:
 
 
 @_guarded
+async def approval(state: ExchangeState, turn: dict) -> dict:
+    """A buyer's approve/decline for an over-allowance replacement (Tisya's ApprovalSeam). The recovery
+    worker confirms or releases the held space on its next pass."""
+    repo, _ = await get_services()
+    result = await handle_approval_reply(TigerApprovalStore(repo.pool), turn["buyer"], turn["text"])
+    turn["body"] = result.text if result is not None else r.static_reply(r.ROUTE_UNSUPPORTED)
+    return {}
+
+
+@_guarded
 async def info(state: ExchangeState, turn: dict) -> dict:
     if turn["route"] == r.ROUTE_CORRIDORS:
         repo, _ = await get_services()
@@ -295,16 +311,18 @@ def _next(state: ExchangeState) -> str:
     route = state["turn"]["route"]
     return {"duplicate": "finish", r.ROUTE_QUOTES: "quote", r.ROUTE_REQUOTE: "requote",
             r.ROUTE_SELECT: "select", r.ROUTE_RECOVERY: "status", r.ROUTE_BOOKING: "book", r.ROUTE_PAID: "book",
-            r.ROUTE_CANCEL: "book"}.get(route, "info")
+            r.ROUTE_CANCEL: "book", ROUTE_APPROVAL: "approval"}.get(route, "info")
 
 
 _builder = StateGraph(ExchangeState)
 for _name, _node in (("start", start), ("quote", quote), ("requote", requote), ("select", select),
-                     ("book", book), ("status", status), ("info", info), ("finish", finish)):
+                     ("book", book), ("status", status), ("approval", approval), ("info", info),
+                     ("finish", finish)):
     _builder.add_node(_name, _node)
 _builder.add_edge(START, "start")
-_builder.add_conditional_edges("start", _next, ["quote", "requote", "select", "book", "status", "info", "finish"])
-for _name in ("quote", "requote", "select", "book", "status", "info"):
+_builder.add_conditional_edges("start", _next, ["quote", "requote", "select", "book", "status", "approval", "info",
+                                                 "finish"])
+for _name in ("quote", "requote", "select", "book", "status", "approval", "info"):
     _builder.add_edge(_name, "finish")
 _builder.add_edge("finish", END)
 agent = _builder.compile()

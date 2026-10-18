@@ -299,3 +299,29 @@ def test_service_failure_returns_retry_safe_error(monkeypatch):
     monkeypatch.setattr(module, "get_services", broken)
     text = _invoke("What corridors do you support?")["messages"][-1].content
     assert text.startswith(module.SERVICE_UNAVAILABLE_REPLY) and "hunter2" not in text
+
+
+def test_approval_replies_route_before_booking_and_recovery():  # #15 NEEDS-FROM-PARTH 1
+    import agent as module
+
+    assert module._route_with_context("I approve the rebooking for BK-1001", None)[0] == module.ROUTE_APPROVAL
+    assert module._route_with_context("@freight-recovery-exc decline bk-1001", "2x20GP")[0] == module.ROUTE_APPROVAL
+    assert module._route_with_context("book it", None)[0] != module.ROUTE_APPROVAL
+
+
+def test_approval_node_answers_with_the_approval_handlers_text(svc, monkeypatch):
+    import agent as module
+    from freight_exchange.asi.approvals import ApprovalReplyResult
+
+    seen = {}
+
+    async def fake_handle(store, buyer_id, text):
+        seen.update(buyer=buyer_id, text=text)
+        return ApprovalReplyResult(text="Approved: BK-1001 will be rebooked once the carrier confirms.",
+                                   approval_id="apr_x", status="APPROVED")
+
+    monkeypatch.setattr(module, "handle_approval_reply", fake_handle)
+    monkeypatch.setattr(module, "TigerApprovalStore", lambda pool: object())
+    svc[0].pool = None
+    text = _invoke("approve BK-1001", agentverse_sender="agent1qbuyer", agentverse_session="s-appr")["messages"][-1].content
+    assert text.startswith("Approved: BK-1001") and seen == {"buyer": "agent1qbuyer", "text": "approve BK-1001"}

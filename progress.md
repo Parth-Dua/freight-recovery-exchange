@@ -205,6 +205,11 @@
 - State: Exchange (`logs/exchange.log`) and 5 carriers running from this session on this code; Tiger holds the completed demo run above.
 - Next: user books Buyer A in ASI:One, withdraws its sailing in the console, runs `scripts/recovery_worker.py --once` → expect CANCELLED then REBOOKED in the same ASI:One conversation; review/merge #15, then add its approval route to `src/agent.py`.
 
+### 2026-10-17 21:00 — [Parth] #15 merged; approval wiring + ASI:One approval route; AT-07-05 LIVE (branch parth/approval-wiring)
+- #15 (Tisya, buyer approval) tested with main merged in (asi files: main's copies were byte-identical to #14, so #15's newer versions taken; progress.md kept both): root 237, carriers 71, seams 18, disruption 9, allocation 26, console 16 → squash-merged (0c85f02).
+- Fix (mine): `real_approval_seam` built `TigerApprovalSeam(pool)`; it takes a store → now `TigerApprovalSeam(TigerApprovalStore(pool))`. Added #15's NEEDS-FROM-PARTH route: `src/agent.py` sends approve/decline replies to Tisya's `handle_approval_reply` before any other route ("approve the rebooking" never reaches booking). Root 239 (2 new).
+- **AT-07-05 LIVE:** reset → buyer_b (1×) + buyer_d (2×, no split, allowance 0) on ATL-101, buyer_c on ATL-102 → withdraw ATL-101 → worker: rec_4b2d9d5fb9a6 **AWAITING_APPROVAL**: B auto-confirmed on COV-301 (cheaper); D held on BEA-201 (+USD 250 > 0), approval apr_rec_4b2d9d5fb9a6_BK-02be2eaa12cd recorded in Tiger. buyer_b sending "approve BK-02be2eaa12cd" → refused ("can't find a replacement waiting…", no leak). buyer_d "I approve the rebooking for bk-02be2eaa12cd" → APPROVED. Next worker pass (new process = resumed session) → confirmed BK-C6CE24F4 on BEA-201 → **COMPLETED**; originals SUPERSEDED; buyer_c untouched. The ASI:One message itself is NEEDS HUMAN VERIFICATION (preseeded buyers have no ASI:One address).
+
 ## Checkpoint template (append concise updates)
 ### YYYY-MM-DD HH:MM — Phase NN
 - Done:
