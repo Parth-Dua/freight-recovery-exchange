@@ -364,3 +364,9 @@
   Recovery transcripts built from rehearsal `negotiation_sessions`; other buyer sees 0 sessions. 11 unit tests.
 - Discovery: gateway profile README/description rewritten for Agentverse search; any shipping intent (incl.
   detailed asks routed by ASI:One) opens the form card.
+
+### 2026-10-18 — [Tisya] Carrier console rebuilt on IBM Carbon (branch tisya/carrier-dashboard)
+- Done: console now uses Carbon's g100 dark theme (`@carbon/styles@1.60.0` from unpkg, IBM Plex fonts) instead of hand-made styles, so standard parts are a known human-made system. New `ui.py` (shell, tables, tags, notifications, container blocks, ship). Pages per carrier: Sailings (`/carrier/{id}/sailings`, hero for the next sailing through an advisory), Sailing detail (ship profile + bookings + withdrawal review), Pricing (moved from /preferences, which now redirects), Agent activity (`negotiation_messages` + `negotiation_sessions` for this carrier, each carrier price checked against its floor), Risk (advisories, affected sailings, withdrawal history). Ship: CC0 side-profile drawing (Wikimedia Commons `Container-158362.svg`, OpenClipartVectors) recolored to the palette; its 4 exchange slots fill from live booking counts. Surge capped at 100% to match the carrier's `Policy.validate`.
+- Evidence: console unit 33 passed (7 live skipped). Local TimescaleDB, migrations 006–013 applied, `dev_db.py reset` (5 carriers, 23 sailings): every page renders against it in a local browser; Agent activity is empty until a live negotiation runs.
+- Note: the Tisya .env lacked CARRIER_MERIDIAN_SEED / CARRIER_DHOW_SEED (added in #13); generated in this worktree's .env only.
+- Next: market view with X-ray from `negotiation_sessions` / `negotiation_messages`, from Tisya's hand sketch.

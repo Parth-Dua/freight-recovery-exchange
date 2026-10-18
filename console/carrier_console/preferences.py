@@ -128,7 +128,7 @@ def validate(prefs: Preferences) -> None:
     pct("utilization_premium_pct", prefs.utilization_premium_pct)
     pct("concession_empty_pct", prefs.concession_empty_pct, 50)
     pct("concession_full_pct", prefs.concession_full_pct, 50)
-    pct("disruption_surge_pct", prefs.disruption_surge_pct, 200)
+    pct("disruption_surge_pct", prefs.disruption_surge_pct)
     if prefs.concession_full_pct > prefs.concession_empty_pct:
         errors["concession_full_pct"] = "A full ship should not discount more than an empty one."
     if not 60 <= prefs.offer_ttl_seconds <= 86_400:

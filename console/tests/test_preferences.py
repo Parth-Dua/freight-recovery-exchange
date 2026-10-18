@@ -60,7 +60,7 @@ def test_every_preset_is_valid() -> None:
         ({"min_price_per_unit_minor": 0}, "min_price_per_unit_minor"),
         ({"concession_full_pct": 20, "concession_empty_pct": 5}, "concession_full_pct"),
         ({"utilization_premium_pct": -1}, "utilization_premium_pct"),
-        ({"disruption_surge_pct": 500}, "disruption_surge_pct"),
+        ({"disruption_surge_pct": 101}, "disruption_surge_pct"),
         ({"offer_ttl_seconds": 10}, "offer_ttl_seconds"),
         ({"selection": "cheapest"}, "selection"),
         ({"payment_terms": "   "}, "payment_terms"),
