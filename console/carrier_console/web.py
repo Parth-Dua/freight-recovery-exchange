@@ -322,13 +322,8 @@ def _risk_section(event: RiskEvent, touched: list[SailingRow], carrier_id: str) 
         f'<input type="hidden" name="risk_event_id" value="{escape(event.risk_event_id)}">'
         f'<button class="cds--btn cds--btn--danger--ghost cds--btn--sm" type="submit">Review withdrawal</button></form>',
     ] for s in touched]
-    lane = ""
-    if touched and "AEJEA-INBOM" in event.affected_corridors:
-        lane = ui.lane_map([{"label": ", ".join(s.sailing_id for s in touched), "color": ui.CARRIER_COLORS.get(carrier_id, "#F26B1D"),
-                             "dy": 0}], caption="Your sailings on this lane pass through the advisory zone.")
     return f"""
 <section class="stack" style="gap: 24px;">
-  {lane}
   <div>
     <p class="muted" style="margin: 0;"><span class="hz"></span> {escape(event.severity.upper())} · {escape(event.category.replace("_", " "))} · simulated</p>
     <h2 style="font-size: 1.75rem; font-weight: 400; margin: 8px 0 0;">{escape(event.region_code.replace("-", " ").title())}</h2>
@@ -353,9 +348,16 @@ async def risk(carrier_id: str) -> HTMLResponse:
         f'<tr><td class="mono">{h[5]:%d %b %H:%M:%S}</td><td class="mono">{escape(h[2])}</td>'
         f'<td>{escape(h[3] or "unknown")}</td><td>{escape(h[4])}</td></tr>' for h in history
     ) or '<tr><td colspan="4" class="muted">No withdrawals yet.</td></tr>'
+    color = ui.CARRIER_COLORS.get(carrier_id, "#F26B1D")
+    by_lane: dict[str, list[str]] = {}
+    for s in rows:
+        if s.is_active and s.corridor_id in ui.LANES:
+            by_lane.setdefault(s.corridor_id, []).append(s.sailing_id)
+    highlights = [{"label": ", ".join(ids), "color": color, "lane": lane, "dy": 0} for lane, ids in by_lane.items()]
     body = f"""
 <div class="stack">
   <div><h1>Risk</h1><p class="lede">Advisories that touch your routes, and what each one would disrupt.</p></div>
+  {ui.network_map(highlights, caption="Every route in the market in gray, yours in color, and both danger zones.")}
   {sections}
   <div class="cds--data-table-container"><div class="cds--data-table-header"><h2 class="cds--data-table-header__title">Withdrawal history</h2></div>
     <table class="cds--data-table cds--data-table--md"><thead><tr><th>Time</th><th>Sailing</th><th>By</th><th>Reason</th></tr></thead><tbody>{log}</tbody></table></div>

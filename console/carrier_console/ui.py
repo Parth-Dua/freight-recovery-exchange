@@ -179,43 +179,61 @@ _NORTH = ("M0 0 L1200 0 L1200 916 L1180 916 L1136 884 L1112 840 L1080 760 L1060 
           "L760 248 L744 224 L640 228 L572 236 L504 228 L440 224 L392 216 L372 204 L356 164 L332 152 L292 176 L240 172 "
           "L184 144 L140 124 L112 84 L92 72 L20 40 L0 40 Z")
 _HORMUZ = "M316 188 L336 170 L356 166 L366 192 L352 212 L336 204 Z"
-_LANE = [(281, 239), (308, 210), (332, 178), (354, 196), (384, 236), (440, 276), (560, 336), (720, 404), (880, 456), (992, 480)]
-_PORTS = {"AEJEA": (281, 239), "INBOM": (994, 482), "OMSOH": (349, 266), "PKKHI": (760, 247), "INMUN": (868, 330)}
+_STRAIT = [(308, 210), (332, 178), (354, 196), (384, 236)]
+_TO_MUMBAI = [(440, 276), (560, 336), (720, 404), (880, 456), (992, 480)]
+LANES = {  # corridor id -> waypoints, from the demo market's corridors
+    "AEJEA-INBOM": [(281, 239), *_STRAIT, *_TO_MUMBAI],
+    "SADMM-INBOM": [(84, 183), (140, 172), (210, 184), (270, 202), *_STRAIT, *_TO_MUMBAI],
+    "OMSOH-INBOM": [(349, 266), (392, 262), (446, 284), (560, 340), (720, 408), (880, 460), (992, 484)],
+    "AEJEA-PKKHI": [(281, 239), *_STRAIT, (440, 262), (560, 254), (680, 252), (760, 248)],
+    "AEJEA-INMUN": [(281, 239), *_STRAIT, (440, 270), (600, 300), (760, 318), (868, 330)],
+}
+_PORTS = {"AEJEA": (281, 239, -64, 24), "SADMM": (84, 183, -10, -14), "OMSOH": (349, 266, 10, 22),
+          "PKKHI": (760, 248, 10, -12), "INMUN": (868, 330, 10, -10), "INBOM": (994, 482, 10, 24)}
 
 
-def lane_map(routes: list[dict], *, view: str = "lane", caption: str = "") -> str:
-    """Jebel Ali to Mumbai through the Strait of Hormuz. Each route is drawn along the same lane,
-    nudged apart so they read as separate sailings: {"label", "color", "dash", "crossed", "dy"}."""
-    box = {"lane": "220 110 850 440", "strait": "230 130 300 200"}[view]
-    lines, tags = [], []
-    for r in routes:
-        dy = r.get("dy", 0)
-        # sailings share the lane through the strait, then fan out in open sea
-        pts = " L".join(f"{x} {y + dy * min(1.0, max(0.0, (i - 4) / 2)):.0f}" for i, (x, y) in enumerate(_LANE))
-        lines.append(f'<path d="M{pts}" fill="none" stroke="{r["color"]}" stroke-width="3" '
-                     f'stroke-dasharray="{r.get("dash", "")}" stroke-linecap="round" stroke-linejoin="round"></path>')
-        lx, ly = 760, 404 + dy + (24 if dy > 0 else -12 if dy < 0 else -12)
-        tags.append(f'<text x="{lx}" y="{ly}" fill="{r["color"]}" font-size="15" text-anchor="middle" '
-                    f'font-family="IBM Plex Mono" paint-order="stroke" stroke="#0E0F11" stroke-width="5">{escape(r["label"])}</text>')
+def network_map(highlights: list[dict] | None = None, *, caption: str = "") -> str:
+    """The whole demo network on one map: every route in gray, both danger zones, and the
+    sailings that matter right now on top. Highlights run along a corridor (default Jebel Ali to
+    Mumbai) and fan out after the strait: {"label", "color", "dash", "crossed", "dy", "lane"}."""
+    base = "".join(
+        f'<polyline points="{" ".join(f"{x},{y}" for x, y in pts)}" fill="none" stroke="#525252" stroke-width="1.5" '
+        f'stroke-linejoin="round"></polyline>' for pts in LANES.values()
+    )
+    lines, tags, used = [], [], {}
+    for r in highlights or []:
+        dy, lane = r.get("dy", 0), LANES[r.get("lane", "AEJEA-INBOM")]
+        pts = " ".join(f"{x},{y + dy * min(1.0, max(0.0, (i - 4) / 2)):.0f}" for i, (x, y) in enumerate(lane))
+        lines.append(f'<polyline points="{pts}" fill="none" stroke="{r["color"]}" stroke-width="3.5" stroke-dasharray="{r.get("dash", "")}" '
+                     f'stroke-linecap="round" stroke-linejoin="round"></polyline>')
+        ax, ay = lane[int(len(lane) * 0.7)]
+        stack = used[(ax, ay)] = used.get((ax, ay), -1) + 1
+        ly = ay + dy + (26 if dy > 0 else -14) - (stack * 20 if dy == 0 else 0)
+        tags.append(f'<text x="{ax}" y="{ly}" fill="{r["color"]}" font-size="16" text-anchor="middle" font-family="IBM Plex Mono" '
+                    f'paint-order="stroke" stroke="#0E0F11" stroke-width="5">{escape(r["label"])}</text>')
         if r.get("crossed"):
-            cx, cy = 500, 306
-            lines.append(f'<path d="M{cx - 12} {cy - 12} L{cx + 12} {cy + 12} M{cx + 12} {cy - 12} L{cx - 12} {cy + 12}" '
-                         f'stroke="#FA4D56" stroke-width="4" stroke-linecap="round"></path>')
+            lines.append('<path d="M488 294 L512 318 M512 294 L488 318" stroke="#FA4D56" stroke-width="4" stroke-linecap="round"></path>')
     ports = "".join(
-        f'<circle cx="{x}" cy="{y}" r="5" fill="#F4F4F4"></circle>'
-        f'<text x="{x + (-62 if code == "AEJEA" else 10)}" y="{y + (22 if code in ("AEJEA", "INBOM") else -8)}" '
-        f'fill="#F4F4F4" font-size="15" font-family="IBM Plex Mono">{code}</text>'
-        for code, (x, y) in _PORTS.items() if code in ("AEJEA", "INBOM")
+        f'<circle cx="{x}" cy="{y}" r="5" fill="#F4F4F4"></circle><text x="{x + dx}" y="{y + dy}" fill="#F4F4F4" font-size="15" '
+        f'font-family="IBM Plex Mono" paint-order="stroke" stroke="#0E0F11" stroke-width="4">{code}</text>'
+        for code, (x, y, dx, dy) in _PORTS.items()
     )
     return f"""<figure style="margin: 0;">
-<svg viewBox="{box}" role="img" aria-label="Map: Jebel Ali to Mumbai through the Strait of Hormuz, with the advisory zone hatched" style="display: block; width: 100%; height: auto; background: #0E0F11;">
-  <defs><pattern id="hz-map" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2.2" height="6" fill="#E5399B"></rect></pattern></defs>
+<svg viewBox="40 100 1020 470" role="img" aria-label="Map of every route in the demo market, the Strait of Hormuz security advisory and the Mumbai approach congestion zone" style="display: block; width: 100%; height: auto; background: #0E0F11;">
+  <defs>
+    <pattern id="hz-high" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2.2" height="6" fill="#E5399B"></rect></pattern>
+    <pattern id="hz-med" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2" height="6" fill="#F1C21B"></rect></pattern>
+  </defs>
   <rect x="0" y="0" width="1200" height="920" fill="#0E0F11"></rect>
-  <path d="{_ARABIA}" fill="#1E2023" stroke="#4D5358" stroke-width="1"></path>
-  <path d="{_NORTH}" fill="#1E2023" stroke="#4D5358" stroke-width="1"></path>
-  <path d="{_HORMUZ}" fill="url(#hz-map)" stroke="#E5399B" stroke-width="1.5"></path>
-  <text x="370" y="160" fill="#FF7EB6" font-size="15">Hormuz advisory</text>
-  <g fill="#6F6F6F" font-size="13" letter-spacing="3"><text x="560" y="150">IRAN</text><text x="660" y="200">PAKISTAN</text>
-    <text x="380" y="420">OMAN</text><text x="1040" y="300">INDIA</text><text x="560" y="500" font-style="italic" letter-spacing="1">Arabian Sea</text></g>
-  {"".join(lines)}{ports}{"".join(tags)}
+  <path d="{_ARABIA}" fill="#1E2023" stroke="#4D5358"></path>
+  <path d="{_NORTH}" fill="#1E2023" stroke="#4D5358"></path>
+  <g fill="#6F6F6F" font-size="13" letter-spacing="3"><text x="560" y="150">IRAN</text><text x="640" y="200">PAKISTAN</text>
+    <text x="300" y="420">OMAN</text><text x="1000" y="300">INDIA</text><text x="120" y="330">SAUDI ARABIA</text>
+    <text x="560" y="520" font-style="italic" letter-spacing="1">Arabian Sea</text></g>
+  {base}{"".join(lines)}
+  <path d="{_HORMUZ}" fill="url(#hz-high)" stroke="#E5399B" stroke-width="1.5" opacity=".9"></path>
+  <text x="372" y="160" fill="#FF7EB6" font-size="15" paint-order="stroke" stroke="#0E0F11" stroke-width="4">Hormuz · security advisory</text>
+  <circle cx="994" cy="482" r="28" fill="url(#hz-med)" stroke="#F1C21B" stroke-width="1.5" opacity=".75"></circle>
+  <text x="1028" y="530" fill="#F1C21B" font-size="14" text-anchor="end" paint-order="stroke" stroke="#0E0F11" stroke-width="4">Mumbai approach · congestion</text>
+  {ports}{"".join(tags)}
 </svg>{f'<figcaption class="muted" style="margin-top: 8px; font-size: .875rem;">{escape(caption)}</figcaption>' if caption else ""}</figure>"""
