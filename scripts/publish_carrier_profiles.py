@@ -121,7 +121,7 @@ def main() -> int:
         address = Identity.from_seed(seed, 0).address
         description, readme = profile(carrier)
         request = AgentverseRegistrationRequest(
-            name=f"{carrier['display_name']} · Carrier Agent",
+            name=f"{carrier['display_name']} Carrier"[:32],  # Agentverse caps agent names at 32 characters
             endpoint=f"{args.endpoint_host}:{carrier['port']}/submit",
             protocols=protocol_digests(cid, seed, carrier["port"]),
             description=description,
@@ -139,8 +139,8 @@ def main() -> int:
             register_agent(request, AgentverseConfig(),
                            RegistrationRequestCredentials(agentverse_api_key=api_key, agent_seed_phrase=seed))
             print(f"  published: https://agentverse.ai/agents/details/{address}/profile")
-        except AgentverseRequestError as exc:
-            print(f"  FAILED: {exc}")
+        except (AgentverseRequestError, ValueError) as exc:  # ValueError covers request validation errors
+            print(f"  FAILED: {type(exc).__name__}: {str(exc).splitlines()[0][:160]}")
             failed += 1
     if not args.publish:
         print("\nDry run. Check each address matches the README's agents table, then rerun with --publish.")

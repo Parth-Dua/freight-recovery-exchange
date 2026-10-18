@@ -40,7 +40,7 @@ def incoming_text(msg: ChatMessage) -> str:
     return "\n".join(c.text for c in msg.content if isinstance(c, TextContent)).strip()
 
 
-def build_gateway(*, seed: str, port: int, backend: BackendClient, name: str = "hormuz-exchange") -> Agent:
+def build_gateway(*, seed: str, port: int, backend: BackendClient, name: str = "Parley Freight Booking") -> Agent:
     agent = Agent(name=name, seed=seed, port=port, mailbox=True, publish_agent_details=True,
                   description=("Ocean freight booking and container shipping agent: get shipping quotes from independent "
                                "carriers, automatic freight rate negotiation, card payment, booking confirmation, and "
