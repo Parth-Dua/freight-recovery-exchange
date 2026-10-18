@@ -177,15 +177,62 @@ class FakeStore:
     async def record_reply(self, outcome, exchange_address):
         self.replies.append(outcome)
 
-    async def save_proposal(self, recovery_id, *, status, stranded, proposal, summary):
-        from dataclasses import asdict
+    async def save_snapshot(self, recovery_id, *, status, snapshot, input_version, event_payload):
         from freight_exchange.recovery import _jsonable
-        self.runs[recovery_id].update(status=status, snapshot=_jsonable(
-            {"stranded": [asdict(b) for b in stranded], "proposal": asdict(proposal), "summary": summary}))
+        self.runs[recovery_id].update(status=status, snapshot=_jsonable(snapshot))
+        self.statuses.append(status)
 
     async def load_run(self, recovery_id):
         run = self.runs.get(recovery_id)
         return None if run is None else (run["status"], run["snapshot"], run["detail"])
+
+    # ---- phase 7 ----
+    legs_by_key: dict = None
+
+    async def set_attempts(self, recovery_id, attempts):
+        self.runs[recovery_id]["attempts"] = attempts
+
+    async def run_attempts(self, recovery_id):
+        return self.runs[recovery_id].get("attempts", 1)
+
+    async def runs_to_resume(self):
+        return [r for r, run in self.runs.items() if run["status"] in ("AWAITING_APPROVAL", "RECONCILIATION_REQUIRED")]
+
+    async def booking_facts(self, ids):
+        from freight_exchange.recovery import BookingFacts
+        return {i: BookingFacts(i, f"buyer_{i}", f"req_{i}", None) for i in ids}
+
+    async def create_legs(self, recovery_id, attempt, legs, sources, facts):
+        from dataclasses import replace as copy
+        self.legs_by_key = self.legs_by_key or {}
+        for leg in legs:
+            self.legs_by_key.setdefault((recovery_id, attempt, leg.booking_id, leg.recovery_offer_id), copy(leg))
+
+    async def update_leg(self, recovery_id, attempt, leg):
+        from dataclasses import replace as copy
+        self.legs_by_key[(recovery_id, attempt, leg.booking_id, leg.recovery_offer_id)] = copy(leg)
+
+    async def legs(self, recovery_id, attempt):
+        from dataclasses import replace as copy
+        found = [copy(v) for (r, a, _, _), v in (self.legs_by_key or {}).items() if (r, a) == (recovery_id, attempt)]
+        return sorted(found, key=lambda leg: leg.key)
+
+    async def supersede(self, recovery_id, old_booking_id, replacement_ids):
+        self.booking_status[old_booking_id] = "SUPERSEDED"
+        self.assignments[old_booking_id] = ("RECOVERED", replacement_ids[0])
+
+    async def set_assignment(self, recovery_id, old_booking_id, status):
+        self.assignments[old_booking_id] = (status, None)
+
+    @property
+    def booking_status(self):
+        self.__dict__.setdefault("_booking_status", {"BK-1001": "DISRUPTED", "BK-1002": "DISRUPTED",
+                                                     "BK-C": "COMMITTED"})
+        return self.__dict__["_booking_status"]
+
+    @property
+    def assignments(self):
+        return self.__dict__.setdefault("_assignments", {})
 
 
 class CarrierNetwork:
@@ -237,7 +284,7 @@ def test_at_06_01_via_acp_shaped_round_a_to_beacon_b_to_cove():
     assert {(a.booking_id, a.sailing_id, a.quantity) for a in out.assignments} == {
         ("BK-1001", "BEA-201", 2), ("BK-1002", "COV-301", 1)}
     assert out.unrecovered_booking_ids == () and out.diagnostics["offers_valid"] == "2"
-    assert store.statuses == ["OFFERS_REQUESTED"] and store.runs["rec_1"]["status"] == "PROPOSED"
+    assert store.statuses == ["OFFERS_REQUESTED", "PROPOSED"] and store.runs["rec_1"]["status"] == "PROPOSED"
     assert run(recovery.outcome("rec_1")) == out
 
 
@@ -301,3 +348,207 @@ def test_no_withdrawal_means_no_recovery_and_no_displaced_bookings_completes_emp
 def test_snapshot_round_trips_to_the_same_outcome():
     out = outcome_from_snapshot("rec_9", "FAILED", None, "boom")
     assert out.status == "FAILED" and out.diagnostics == {"detail": "boom"}
+
+
+# ---- phase 7: holds -> approval -> confirmation -> lineage (unit: fake carriers, in-memory store) ----
+
+from freight_exchange.booking import ConfirmResult, HoldResult  # noqa: E402
+
+
+class FakeHolds:
+    """Carrier holds and confirmations. `refuse_hold` maps sailing -> attempts on which the hold fails."""
+
+    def __init__(self, refuse_hold=None, confirm_unknown=()):
+        self.refuse_hold = refuse_hold or {}
+        self.confirm_unknown = set(confirm_unknown)
+        self.calls, self.active = [], {}
+        self.hold_attempts: dict[str, int] = {}
+
+    async def request_hold(self, carrier, *, offer_id, request_id, buyer_id, quantity, idempotency_key, ttl_seconds,
+                           negotiation_id="", correlation_id="", recovery_offer_id=None):
+        sailing = offer_id.split("rof_")[1].split(".")[0]
+        attempt = int(idempotency_key.split(":")[2])
+        self.calls.append(("hold", sailing, offer_id.split(".")[1], attempt))
+        if attempt in self.refuse_hold.get(sailing, ()):
+            return HoldResult(False, "INSUFFICIENT_CAPACITY", "gone")
+        hold_id = f"hold_{sailing}_{attempt}_{offer_id.split('.')[1]}"
+        self.active[hold_id] = "ACTIVE"
+        return HoldResult(True, "HOLD_CONFIRMED", hold_id=hold_id, expires_at=NOW + timedelta(minutes=40))
+
+    async def release_hold(self, carrier, *, hold_id, request_id="", negotiation_id="", correlation_id=""):
+        self.calls.append(("release", hold_id))
+        self.active[hold_id] = "RELEASED"
+        return HoldResult(True, "HOLD_RELEASED", hold_id=hold_id)
+
+    async def confirm_booking(self, carrier, *, hold_id, idempotency_key, replaces_booking_id, **_):
+        self.calls.append(("confirm", hold_id, replaces_booking_id))
+        if replaces_booking_id in self.confirm_unknown:
+            return ConfirmResult(False, "CARRIER_TIMEOUT", "no reply")
+        assert self.active.get(hold_id) == "ACTIVE", "confirmed a hold that is not active"
+        self.active[hold_id] = "COMMITTED"
+        return ConfirmResult(True, "BOOKING_CONFIRMED", booking_id=f"BK-NEW-{replaces_booking_id[-4:]}",
+                             confirmed_at=NOW)
+
+
+class FakeApproval:
+    def __init__(self, decision="PENDING"):
+        self.decision, self.requested = decision, []
+
+    async def request_approval(self, *, proposal, booking_id, buyer_id):
+        self.requested.append(booking_id)
+        return f"apr_{proposal.recovery_run_id}_{booking_id}"
+
+    async def approval_status(self, approval_id):
+        return self.decision
+
+
+class FakeNotifier:
+    def __init__(self):
+        self.sent = []
+
+    async def cancelled(self, *, withdrawal_event_id, sailing_id, stranded):
+        self.sent.append(("CANCELLED", tuple(b.booking_id for b in stranded)))
+
+    async def update(self, *, recovery_run_id, stranded, proposal, outcome):
+        if outcome is None:
+            self.sent.append(("PLAN", proposal.needs_approval_booking_ids, proposal.unrecovered_booking_ids))
+        else:
+            self.sent.append(("OUTCOME", outcome.status, tuple(a.booking_id for a in outcome.assignments),
+                              outcome.unrecovered_booking_ids))
+
+
+def committing_seam(network=None, *, holds=None, approval=None, store=None, capacity=None, clock=lambda: NOW):
+    recovery, store = seam(network or demo_network(), store=store, capacity=capacity)
+    recovery.holds, recovery.approval, recovery.notifier = holds or FakeHolds(), approval, FakeNotifier()
+    recovery.clock = clock
+    return recovery, store
+
+
+def test_at_07_01_recovered_bookings_have_confirmed_holds_and_new_booking_ids():
+    recovery, store = committing_seam()
+    out = run(recovery.recover(sailing_id="ATL-101", triggered_at=NOW))
+    assert out.status == "COMPLETED" and out.fully_recovered
+    assert {(a.booking_id, a.sailing_id) for a in out.assignments} == {("BK-1001", "BEA-201"), ("BK-1002", "COV-301")}
+    assert out.diagnostics["replacement:BK-1001"] == "BK-NEW-1001"
+    holds = recovery.holds.calls
+    assert [c[0] for c in holds] == ["hold", "hold", "confirm", "confirm"]   # every hold before any confirm
+    assert [c[1] for c in holds[:2]] == ["BEA-201", "COV-301"]              # fixed (carrier, sailing) order
+    assert store.booking_status["BK-1001"] == store.booking_status["BK-1002"] == "SUPERSEDED"
+    assert store.assignments["BK-1001"] == ("RECOVERED", "BK-NEW-1001")
+
+
+def test_at_07_02_unrelated_booking_is_never_touched():
+    recovery, store = committing_seam()
+    run(recovery.recover(sailing_id="ATL-101", triggered_at=NOW))
+    assert store.booking_status["BK-C"] == "COMMITTED" and "BK-C" not in store.assignments
+    assert all(c[2] in ("BK-1001", "BK-1002") for c in recovery.holds.calls if c[0] == "confirm")
+
+
+def test_at_07_03_duplicate_trigger_after_completion_creates_nothing_new():
+    recovery, store = committing_seam()
+    first = run(recovery.recover(sailing_id="ATL-101", triggered_at=NOW))
+    calls = list(recovery.holds.calls)
+    second = run(recovery.recover(sailing_id="ATL-101", triggered_at=NOW + timedelta(minutes=1)))
+    assert second == first and recovery.holds.calls == calls
+
+
+def test_at_07_04_failed_hold_releases_the_rest_and_resolves_once_then_reports_partial():
+    holds = FakeHolds(refuse_hold={"COV-301": (1, 2)})   # Cove's space is gone on both attempts
+    network = demo_network()
+    recovery, store = committing_seam(network, holds=holds)
+    out = run(recovery.recover(sailing_id="ATL-101", triggered_at=NOW))
+    assert ("release", "hold_BEA-201_1_BK-1001") in holds.calls       # partial hold released before re-solve
+    assert len(network.received) == 6                                  # carriers asked exactly twice, never more
+    assert out.status == "PARTIAL"
+    assert [a.booking_id for a in out.assignments] == ["BK-1001"] and out.unrecovered_booking_ids == ("BK-1002",)
+    assert "INSUFFICIENT_CAPACITY" in out.diagnostics["BK-1002"]
+    assert store.booking_status["BK-1002"] == "DISRUPTED" and store.assignments["BK-1002"][0] == "UNRECOVERED"
+
+
+def test_failed_hold_on_first_attempt_only_recovers_everything_on_the_resolve():
+    holds = FakeHolds(refuse_hold={"COV-301": (1,)})
+    recovery, _ = committing_seam(holds=holds)
+    out = run(recovery.recover(sailing_id="ATL-101", triggered_at=NOW))
+    assert out.status == "COMPLETED" and out.diagnostics["attempts"] == "2"
+
+
+def expensive_beacon():
+    network = demo_network()   # 600,000 > BK-1001's 525,000 + 35,000 allowance -> needs approval
+    network.answers["beacon"] = lambda req: offers_reply("beacon", req, terms("BEA-201", 2, 600000))
+    return network
+
+
+def test_at_07_05_over_allowance_waits_for_approval_and_survives_a_new_session():
+    approval = FakeApproval("PENDING")
+    recovery, store = committing_seam(expensive_beacon(), approval=approval)
+    out = run(recovery.recover(sailing_id="ATL-101", triggered_at=NOW))
+    assert out.status == "AWAITING_APPROVAL" and approval.requested == ["BK-1001"]
+    assert [a.booking_id for a in out.assignments] == ["BK-1002"]        # only the confirmed one
+    assert not any(c[0] == "confirm" and c[2] == "BK-1001" for c in recovery.holds.calls)
+    assert ("PLAN", ("BK-1001",), ()) in recovery.notifier.sent         # approval asked while the space is held
+
+    # A fresh seam over the same persisted state (the buyer came back later) finishes the run.
+    approval.decision = "APPROVED"
+    later, _ = committing_seam(expensive_beacon(), approval=approval, store=store, holds=recovery.holds)
+    done = run(later.resume("rec_1"))
+    assert done.status == "COMPLETED" and {a.booking_id for a in done.assignments} == {"BK-1001", "BK-1002"}
+
+
+def test_declined_approval_releases_the_hold_and_books_nothing():
+    approval = FakeApproval("DECLINED")
+    recovery, store = committing_seam(expensive_beacon(), approval=approval)
+    out = run(recovery.recover(sailing_id="ATL-101", triggered_at=NOW))
+    assert out.status == "PARTIAL" and out.unrecovered_booking_ids == ("BK-1001",)
+    assert ("release", "hold_BEA-201_1_BK-1001") in recovery.holds.calls
+    assert store.assignments["BK-1001"] == ("DECLINED", None) and store.booking_status["BK-1001"] == "DISRUPTED"
+
+
+def test_without_an_approval_answer_the_hold_lapses_and_nothing_is_confirmed():
+    recovery, store = committing_seam(expensive_beacon(), approval=None)
+    assert run(recovery.recover(sailing_id="ATL-101", triggered_at=NOW)).status == "AWAITING_APPROVAL"
+    recovery.clock = lambda: NOW + timedelta(hours=1)                    # hold expired at +40 min
+    out = run(recovery.resume("rec_1"))
+    assert out.status == "PARTIAL" and out.unrecovered_booking_ids == ("BK-1001",)
+    assert not any(c[0] == "confirm" and c[2] == "BK-1001" for c in recovery.holds.calls)
+
+
+def test_at_07_06_unanswered_confirmation_is_never_reported_as_recovered_and_resume_settles_it():
+    holds = FakeHolds(confirm_unknown={"BK-1002"})
+    recovery, store = committing_seam(holds=holds)
+    out = run(recovery.recover(sailing_id="ATL-101", triggered_at=NOW))
+    assert out.status == "RECONCILIATION_REQUIRED"
+    assert [a.booking_id for a in out.assignments] == ["BK-1001"] and "BK-1002" not in out.unrecovered_booking_ids
+    assert store.booking_status["BK-1002"] == "DISRUPTED"
+    outcomes = [m for m in recovery.notifier.sent if m[0] == "OUTCOME"]
+    assert outcomes[-1][2] == ("BK-1001",)                               # buyers hear only what is confirmed
+    holds.confirm_unknown.clear()
+    done = run(recovery.resume("rec_1"))
+    assert done.status == "COMPLETED" and store.booking_status["BK-1002"] == "SUPERSEDED"
+    confirms = [c for c in holds.calls if c[0] == "confirm" and c[2] == "BK-1002"]
+    assert len(confirms) == 2                                            # same idempotency key, retried once
+
+
+def test_buyers_are_told_about_the_cancellation_first_and_rebooking_only_after_confirmation():
+    recovery, _ = committing_seam()
+    run(recovery.recover(sailing_id="ATL-101", triggered_at=NOW))
+    kinds = [m[0] for m in recovery.notifier.sent]
+    assert kinds[0] == "CANCELLED" and kinds[-1] == "OUTCOME" and kinds.index("PLAN") < kinds.index("OUTCOME")
+
+
+def test_worker_recovers_new_withdrawals_and_resumes_waiting_runs():
+    from types import SimpleNamespace
+
+    from freight_exchange.recovery_worker import tick
+
+    approval = FakeApproval("PENDING")
+    recovery, store = committing_seam(expensive_beacon(), approval=approval)
+
+    async def pending_withdrawals():
+        return [] if store.runs else [SimpleNamespace(sailing_id="ATL-101")]
+    recovery.disruption.pending_withdrawals = pending_withdrawals
+
+    first = run(tick(recovery))
+    assert [o.status for o in first] == ["AWAITING_APPROVAL", "AWAITING_APPROVAL"]   # recovered, then resumed
+    approval.decision = "APPROVED"
+    assert [o.status for o in run(tick(recovery))] == ["COMPLETED"]
+    assert run(tick(recovery)) == []

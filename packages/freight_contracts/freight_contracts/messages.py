@@ -227,6 +227,9 @@ class RequestHold(_ExpiringRequest):
     buyer_id: str
     idempotency_key: str = Field(..., min_length=8, max_length=200)
     requested_ttl_seconds: int = Field(..., ge=60, le=7200)
+    # Phase 7 (additive): hold part of a one-shot recovery offer. `offer_id` is then the
+    # Exchange's per-booking offer row, priced at this recovery offer's unit price.
+    recovery_offer_id: Optional[str] = None
 
 
 class HoldConfirmed(_SignedReply):
@@ -270,6 +273,7 @@ class ConfirmBooking(_ExpiringRequest):
     idempotency_key: str = Field(..., min_length=8, max_length=200)
     intent_id: str
     claim_code_hash: str
+    replaces_booking_id: Optional[str] = None  # Phase 7 (additive): recovery lineage
 
 
 class BookingConfirmed(_SignedReply):
