@@ -25,3 +25,8 @@ uagents_core.log
 build/
 dist/
 logs/
+
+# iCloud sync-conflict copies ("file 2.py") — never commit them (repo lives in an iCloud-synced folder)
+*\ [0-9].*
+*\ [0-9][0-9].*
+*\ [0-9]

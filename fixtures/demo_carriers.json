@@ -1,42 +1,86 @@
 {
-  "_note": "Fictional simulation fixture. Carrier names, vessels, schedules and prices are NOT real market data.",
+  "_note": "Fictional simulation fixture. Carrier names, vessels, schedules and prices are NOT real market data. Times are offsets from anchor_date (UTC).",
+  "_demo_invariant": "Recovery scarcity (spec 06 WP5, PRD 16.1): on AEJEA-INBOM, the only sailings arriving within ~anchor+4d are ATL-101 (4 slots, the one withdrawn in the demo), BEA-201 (2) and COV-301 (1). Every other AEJEA-INBOM sailing arrives later, so they cannot rescue ATL-101's buyers. ATL-101 must stay the earliest ACTIVE departure (console preseed books Buyer B on the first active sailing).",
   "anchor_date": "2026-10-20T00:00:00Z",
-  "corridor_id": "AEJEA-INBOM",
+  "default_corridor": "AEJEA-INBOM",
   "ports": [
     {"port_code": "AEJEA", "name": "Jebel Ali", "country_code": "AE", "aliases": ["jebel ali", "dubai", "aejea"]},
-    {"port_code": "INBOM", "name": "Mumbai", "country_code": "IN", "aliases": ["mumbai", "bombay", "nhava sheva", "inbom"]}
+    {"port_code": "SADMM", "name": "Dammam", "country_code": "SA", "aliases": ["dammam", "sadmm"]},
+    {"port_code": "OMSOH", "name": "Sohar", "country_code": "OM", "aliases": ["sohar", "omsoh"]},
+    {"port_code": "INBOM", "name": "Mumbai", "country_code": "IN", "aliases": ["mumbai", "bombay", "nhava sheva", "inbom"]},
+    {"port_code": "INMUN", "name": "Mundra", "country_code": "IN", "aliases": ["mundra", "inmun"]},
+    {"port_code": "PKKHI", "name": "Karachi", "country_code": "PK", "aliases": ["karachi", "pkkhi"]}
   ],
+  "corridors": {
+    "AEJEA-INBOM": {"origin": "AEJEA", "destination": "INBOM", "route_region_ids": ["STRAIT_OF_HORMUZ"]},
+    "AEJEA-INMUN": {"origin": "AEJEA", "destination": "INMUN", "route_region_ids": ["STRAIT_OF_HORMUZ"]},
+    "AEJEA-PKKHI": {"origin": "AEJEA", "destination": "PKKHI", "route_region_ids": ["STRAIT_OF_HORMUZ"]},
+    "SADMM-INBOM": {"origin": "SADMM", "destination": "INBOM", "route_region_ids": ["STRAIT_OF_HORMUZ"]},
+    "OMSOH-INBOM": {"origin": "OMSOH", "destination": "INBOM", "route_region_ids": ["GULF_OF_OMAN"]}
+  },
   "carriers": [
     {
       "carrier_id": "atlas", "display_name": "Atlas Lines (fictional)", "port": 8101,
       "policy": {"currency": "USD", "min_price_per_unit_minor": 230000, "target_price_per_unit_minor": 260000,
-                 "utilization_premium_pct": 10, "offer_ttl_seconds": 600, "selection": "earliest_arrival", "concession_pct": 10},
-      "vessels": [{"vessel_id": "atlas-meridian", "name": "Atlas Meridian"}],
+                 "utilization_premium_pct": 10, "offer_ttl_seconds": 600, "selection": "earliest_arrival", "concession_pct": 10, "payment_terms": "Freight prepaid to Atlas before departure (simulated)", "max_hold_seconds": 3600},
+      "vessels": [{"vessel_id": "atlas-meridian", "name": "Atlas Meridian"}, {"vessel_id": "atlas-horizon", "name": "Atlas Horizon"}],
       "sailings": [
         {"sailing_id": "ATL-101", "vessel_id": "atlas-meridian", "depart": {"days": 0, "hours": 12}, "arrive": {"days": 2, "hours": 8}, "slots_20gp": 4},
-        {"sailing_id": "ATL-102", "vessel_id": "atlas-meridian", "depart": {"days": 4, "hours": 12}, "arrive": {"days": 6, "hours": 8}, "slots_20gp": 4}
+        {"sailing_id": "ATL-102", "vessel_id": "atlas-meridian", "depart": {"days": 4, "hours": 12}, "arrive": {"days": 6, "hours": 8}, "slots_20gp": 4},
+        {"sailing_id": "ATL-103", "vessel_id": "atlas-meridian", "depart": {"days": 11, "hours": 12}, "arrive": {"days": 13, "hours": 8}, "slots_20gp": 6},
+        {"sailing_id": "ATL-151", "vessel_id": "atlas-horizon", "corridor": "SADMM-INBOM", "depart": {"days": 2, "hours": 9}, "arrive": {"days": 5, "hours": 6}, "slots_20gp": 6},
+        {"sailing_id": "ATL-152", "vessel_id": "atlas-horizon", "corridor": "SADMM-INBOM", "depart": {"days": 9, "hours": 9}, "arrive": {"days": 12, "hours": 6}, "slots_20gp": 6}
       ]
     },
     {
       "carrier_id": "beacon", "display_name": "Beacon Maritime (fictional)", "port": 8102,
       "policy": {"currency": "USD", "min_price_per_unit_minor": 235000, "target_price_per_unit_minor": 275000,
-                 "utilization_premium_pct": 5, "offer_ttl_seconds": 600, "selection": "earliest_arrival", "concession_pct": 4},
-      "vessels": [{"vessel_id": "beacon-harbinger", "name": "Beacon Harbinger"}],
+                 "utilization_premium_pct": 5, "offer_ttl_seconds": 600, "selection": "earliest_arrival", "concession_pct": 4, "payment_terms": "Freight prepaid to Beacon before departure (simulated)", "max_hold_seconds": 3600},
+      "vessels": [{"vessel_id": "beacon-harbinger", "name": "Beacon Harbinger"}, {"vessel_id": "beacon-lodestar", "name": "Beacon Lodestar"}],
       "sailings": [
         {"sailing_id": "BEA-201", "vessel_id": "beacon-harbinger", "depart": {"days": 1, "hours": 6}, "arrive": {"days": 3, "hours": 4}, "slots_20gp": 2},
-        {"sailing_id": "BEA-202", "vessel_id": "beacon-harbinger", "depart": {"days": 5, "hours": 6}, "arrive": {"days": 7, "hours": 4}, "slots_20gp": 4}
+        {"sailing_id": "BEA-202", "vessel_id": "beacon-harbinger", "depart": {"days": 5, "hours": 6}, "arrive": {"days": 7, "hours": 4}, "slots_20gp": 4},
+        {"sailing_id": "BEA-203", "vessel_id": "beacon-harbinger", "depart": {"days": 12, "hours": 6}, "arrive": {"days": 14, "hours": 4}, "slots_20gp": 8},
+        {"sailing_id": "BEA-251", "vessel_id": "beacon-lodestar", "corridor": "AEJEA-INMUN", "depart": {"days": 3, "hours": 14}, "arrive": {"days": 5, "hours": 20}, "slots_20gp": 6},
+        {"sailing_id": "BEA-252", "vessel_id": "beacon-lodestar", "corridor": "AEJEA-INMUN", "depart": {"days": 10, "hours": 14}, "arrive": {"days": 12, "hours": 20}, "slots_20gp": 6}
       ]
     },
     {
       "carrier_id": "cove", "display_name": "Cove Shipping (fictional)", "port": 8103,
       "policy": {"currency": "USD", "min_price_per_unit_minor": 220000, "target_price_per_unit_minor": 250000,
-                 "utilization_premium_pct": 15, "offer_ttl_seconds": 600, "selection": "earliest_departure", "concession_pct": 3},
-      "vessels": [{"vessel_id": "cove-tidewater", "name": "Cove Tidewater"}],
+                 "utilization_premium_pct": 15, "offer_ttl_seconds": 600, "selection": "earliest_departure", "concession_pct": 3, "payment_terms": "Freight collect: payable to Cove at Mumbai before release (simulated)", "max_hold_seconds": 3600},
+      "vessels": [{"vessel_id": "cove-tidewater", "name": "Cove Tidewater"}, {"vessel_id": "cove-saltmarsh", "name": "Cove Saltmarsh"}],
       "sailings": [
         {"sailing_id": "COV-301", "vessel_id": "cove-tidewater", "depart": {"days": 1, "hours": 18}, "arrive": {"days": 3, "hours": 18}, "slots_20gp": 1},
-        {"sailing_id": "COV-302", "vessel_id": "cove-tidewater", "depart": {"days": 3, "hours": 18}, "arrive": {"days": 5, "hours": 18}, "slots_20gp": 3}
+        {"sailing_id": "COV-302", "vessel_id": "cove-tidewater", "depart": {"days": 3, "hours": 18}, "arrive": {"days": 5, "hours": 18}, "slots_20gp": 3},
+        {"sailing_id": "COV-303", "vessel_id": "cove-tidewater", "depart": {"days": 8, "hours": 18}, "arrive": {"days": 10, "hours": 18}, "slots_20gp": 4},
+        {"sailing_id": "COV-351", "vessel_id": "cove-saltmarsh", "corridor": "OMSOH-INBOM", "depart": {"days": 2, "hours": 10}, "arrive": {"days": 4, "hours": 2}, "slots_20gp": 5},
+        {"sailing_id": "COV-352", "vessel_id": "cove-saltmarsh", "corridor": "OMSOH-INBOM", "depart": {"days": 9, "hours": 10}, "arrive": {"days": 11, "hours": 2}, "slots_20gp": 5}
+      ]
+    },
+    {
+      "carrier_id": "meridian", "display_name": "Meridian Container Line (fictional)", "port": 8104,
+      "policy": {"currency": "USD", "min_price_per_unit_minor": 245000, "target_price_per_unit_minor": 290000,
+                 "utilization_premium_pct": 8, "offer_ttl_seconds": 600, "selection": "earliest_arrival", "concession_pct": 6, "payment_terms": "Freight prepaid to Meridian, 50% at booking and 50% before departure (simulated)", "max_hold_seconds": 3600},
+      "vessels": [{"vessel_id": "meridian-star", "name": "Meridian Star"}, {"vessel_id": "meridian-crest", "name": "Meridian Crest"}],
+      "sailings": [
+        {"sailing_id": "MER-401", "vessel_id": "meridian-star", "depart": {"days": 4, "hours": 20}, "arrive": {"days": 6, "hours": 14}, "slots_20gp": 10},
+        {"sailing_id": "MER-402", "vessel_id": "meridian-star", "depart": {"days": 11, "hours": 20}, "arrive": {"days": 13, "hours": 14}, "slots_20gp": 10},
+        {"sailing_id": "MER-451", "vessel_id": "meridian-crest", "corridor": "SADMM-INBOM", "depart": {"days": 3, "hours": 4}, "arrive": {"days": 6, "hours": 1}, "slots_20gp": 8},
+        {"sailing_id": "MER-471", "vessel_id": "meridian-crest", "corridor": "AEJEA-PKKHI", "depart": {"days": 7, "hours": 16}, "arrive": {"days": 9, "hours": 4}, "slots_20gp": 6}
+      ]
+    },
+    {
+      "carrier_id": "dhow", "display_name": "Dhow Feeder Lines (fictional)", "port": 8105,
+      "policy": {"currency": "USD", "min_price_per_unit_minor": 190000, "target_price_per_unit_minor": 215000,
+                 "utilization_premium_pct": 12, "offer_ttl_seconds": 600, "selection": "earliest_departure", "concession_pct": 12, "payment_terms": "Freight collect: payable to Dhow at destination before release (simulated)", "max_hold_seconds": 3600},
+      "vessels": [{"vessel_id": "dhow-pearl", "name": "Dhow Pearl"}],
+      "sailings": [
+        {"sailing_id": "DHW-501", "vessel_id": "dhow-pearl", "corridor": "AEJEA-INMUN", "depart": {"days": 2, "hours": 2}, "arrive": {"days": 4, "hours": 22}, "slots_20gp": 3},
+        {"sailing_id": "DHW-502", "vessel_id": "dhow-pearl", "corridor": "AEJEA-INMUN", "depart": {"days": 8, "hours": 2}, "arrive": {"days": 10, "hours": 22}, "slots_20gp": 3},
+        {"sailing_id": "DHW-551", "vessel_id": "dhow-pearl", "corridor": "OMSOH-INBOM", "depart": {"days": 5, "hours": 8}, "arrive": {"days": 7, "hours": 2}, "slots_20gp": 4},
+        {"sailing_id": "DHW-571", "vessel_id": "dhow-pearl", "corridor": "AEJEA-PKKHI", "depart": {"days": 13, "hours": 2}, "arrive": {"days": 15, "hours": 6}, "slots_20gp": 4}
       ]
     }
-  ],
-  "route_region_ids": ["STRAIT_OF_HORMUZ"]
+  ]
 }

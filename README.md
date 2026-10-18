@@ -30,7 +30,7 @@ uv run python scripts/db.py seed                   # fictional carriers/sailings
 
 **Run (two terminals)**
 ```bash
-./scripts/run_carriers.sh                          # Atlas :8101, Beacon :8102, Cove :8103
+./scripts/run_carriers.sh                          # all carriers in the fixture (Atlas 8101 … Dhow 8105)
 uv run langgraph-av dev --no-browser               # Exchange Agent (Agentverse mailbox)
 ```
 

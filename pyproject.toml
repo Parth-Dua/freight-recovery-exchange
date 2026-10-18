@@ -14,6 +14,9 @@ dependencies = [
     "freight-contracts",
     "psycopg-pool>=3.2,<4",
     "freight-seams",
+    "stripe>=12,<15",
+    "freight-disruption",
+    "freight-allocation",
 ]
 
 [dependency-groups]
@@ -29,3 +32,5 @@ testpaths = ["tests"]
 [tool.uv.sources]
 freight-contracts = { path = "packages/freight_contracts", editable = false }
 freight-seams = { path = "packages/freight_seams", editable = false }
+freight-disruption = { path = "packages/freight_disruption", editable = false }
+freight-allocation = { path = "packages/freight_allocation", editable = false }

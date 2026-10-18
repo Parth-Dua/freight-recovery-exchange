@@ -41,9 +41,8 @@ def _at(anchor: datetime, offset: dict[str, int]) -> datetime:
 
 def seed(conn: psycopg.Connection, fixture: dict[str, Any], anchor: datetime) -> dict[str, int]:
     counts = {"ports": 0, "carriers": 0, "sailings": 0, "slots_inserted": 0}
-    corridor = fixture["corridor_id"]
-    regions = fixture["route_region_ids"]
-    origin, destination = (p["port_code"] for p in fixture["ports"])
+    corridors = fixture["corridors"]
+    default_corridor = fixture["default_corridor"]
 
     with conn.transaction():
         for p in fixture["ports"]:
@@ -83,13 +82,18 @@ def seed(conn: psycopg.Connection, fixture: dict[str, Any], anchor: datetime) ->
                     (v["vessel_id"], cid, v["name"], SOURCE),
                 )
             for s in c["sailings"]:
+                corridor = s.get("corridor", default_corridor)
+                lane = corridors[corridor]
+                origin, destination, regions = lane["origin"], lane["destination"], lane["route_region_ids"]
                 conn.execute(
                     """INSERT INTO sailings (sailing_id, carrier_id, vessel_id, origin_port, destination_port,
                                              corridor_id, route_region_ids, departure_at, arrival_at, status, source_kind)
                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'ACTIVE', %s)
                        ON CONFLICT (sailing_id) DO UPDATE
                        SET departure_at = EXCLUDED.departure_at, arrival_at = EXCLUDED.arrival_at,
-                           route_region_ids = EXCLUDED.route_region_ids, updated_at = now()""",
+                           origin_port = EXCLUDED.origin_port, destination_port = EXCLUDED.destination_port,
+                           corridor_id = EXCLUDED.corridor_id, route_region_ids = EXCLUDED.route_region_ids,
+                           updated_at = now()""",
                     (s["sailing_id"], cid, s["vessel_id"], origin, destination, corridor, regions,
                      _at(anchor, s["depart"]), _at(anchor, s["arrive"]), SOURCE),
                 )
@@ -111,13 +115,23 @@ def table_counts(conn: psycopg.Connection) -> dict[str, int]:
     return {t: conn.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in tables}
 
 
+def resolve_anchor(value: str) -> datetime:
+    if value == "auto":
+        from datetime import timezone
+
+        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        return today + timedelta(days=1)
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
 def main() -> int:
     load_dotenv(PROJECT_ROOT / ".env")
     fixture = load_fixture()
     parser = argparse.ArgumentParser()
-    parser.add_argument("--anchor", default=fixture["anchor_date"], help="ISO-8601 UTC anchor for sailing dates")
+    parser.add_argument("--anchor", default=fixture["anchor_date"],
+                        help="ISO-8601 UTC anchor for sailing dates, or 'auto' = tomorrow 00:00 UTC")
     args = parser.parse_args()
-    anchor = datetime.fromisoformat(args.anchor.replace("Z", "+00:00"))
+    anchor = resolve_anchor(args.anchor)
     with psycopg.connect(database_url(), connect_timeout=15) as conn:
         counts = seed(conn, fixture, anchor)
         print(f"seed upserted: {counts}")

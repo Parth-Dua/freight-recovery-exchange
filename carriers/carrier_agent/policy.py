@@ -35,6 +35,8 @@ class Policy:
     offer_ttl_seconds: int
     selection: str  # earliest_arrival | earliest_departure
     concession_pct: int = 0  # max discount off our own opening price on a counter (private)
+    payment_terms: str = "Freight prepaid to the carrier before departure"  # shown on receipts
+    max_hold_seconds: int = 3600
 
     @classmethod
     def from_json(cls, data: dict) -> "Policy":
@@ -104,6 +106,61 @@ def decide(cargo: CargoSpec, sailings: list[SailingInventory], policy: Policy, n
         total = cargo.max_total_price_minor
     enforce_floor(total, policy, quantity)
     return Quote(sailing=sailing, quantity=quantity, total_price_minor=total)
+
+
+# ---- recovery capacity (Phase 6, one-shot) ------------------------------------
+
+MAX_RECOVERY_OFFERS = 5
+
+
+@dataclass(frozen=True)
+class RecoveryQuote:
+    sailing: SailingInventory
+    container_type: str
+    capacity_units: int
+    total_price_minor: int
+    eligible_booking_ids: tuple[str, ...]
+
+
+def recovery_eligible(item, sailing: SailingInventory) -> bool:
+    """Could this displaced booking ride on this sailing? Same lane, on time, and it fits
+    (whole, or partly when the buyer allows a split)."""
+    return ((item.origin_port, item.destination_port) == (sailing.origin_port, sailing.destination_port)
+            and sailing.arrival_at <= item.latest_arrival
+            and (item.quantity <= sailing.available_units or item.allow_split))
+
+
+def decide_recovery(items: list, sailings_by_type: dict[str, list[SailingInventory]], policy: Policy,
+                    now: datetime, *, withdrawn_sailing_id: str) -> list[RecoveryQuote] | Decline:
+    """One-shot replacement offers: every sailing of ours that can take at least one displaced
+    booking, priced by the same private policy as a quote. There is no bargaining after this."""
+    supported = [i for i in items if i.container_type in SUPPORTED_CONTAINER_TYPES and i.currency == policy.currency]
+    if not supported:
+        return Decline(RejectReason.UNSUPPORTED_CONTAINER_TYPE, "no displaced booking we can carry")
+
+    quotes, on_lane = [], False
+    for container_type in sorted({i.container_type for i in supported}):
+        typed = [i for i in supported if i.container_type == container_type]
+        for s in sorted(sailings_by_type.get(container_type, []), key=lambda s: (s.arrival_at, s.sailing_id)):
+            if s.sailing_id == withdrawn_sailing_id or s.departure_at <= now:
+                continue
+            on_lane = on_lane or any((i.origin_port, i.destination_port) == (s.origin_port, s.destination_port)
+                                     for i in typed)
+            if s.available_units < 1:
+                continue
+            eligible = [i for i in typed if recovery_eligible(i, s)]
+            if not eligible:
+                continue
+            units = min(s.available_units, sum(i.quantity for i in eligible))
+            total = unit_price_minor(policy, s) * units
+            enforce_floor(total, policy, units)
+            quotes.append(RecoveryQuote(s, container_type, units, total, tuple(sorted(i.booking_id for i in eligible))))
+
+    if quotes:
+        return quotes[:MAX_RECOVERY_OFFERS]
+    if not on_lane:
+        return Decline(RejectReason.UNSUPPORTED_CORRIDOR, "no upcoming sailings on this corridor")
+    return Decline(RejectReason.NO_ELIGIBLE_SAILING, "no sailing with space arrives in time")
 
 
 # ---- counter-offers ---------------------------------------------------------
