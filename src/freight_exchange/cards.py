@@ -274,8 +274,9 @@ def recovery_trace_card(traces, *, booking_id: str, chosen: str | None) -> dict:
                                       "cargo first, then the most shipments recovered, the fewest approvals, the "
                                       "lowest extra cost, the earliest arrival."))
     rows.append(("Privacy", "Other shippers' bookings and prices, your auto-rebook limit and carrier floors stay private."))
-    narration = f"How your agent negotiated replacement space for {booking_id}."
-    fallback = narration + "\n" + "\n".join(f"- {k}: {v}" for k, v in rows)
+    narration = f"How your agent negotiated replacement space for {booking_id}:\n" + "\n".join(
+        f"- {t.carrier_display_name}: {trace_summary(t)}" for t in traces) + (f"\nChosen: {chosen}" if chosen else "")
+    fallback = narration + "\n" + "\n".join(f"- {k}: {v}" for k, v in rows[len(traces):])
     return result(narration, "detail", {"title": f"Recovery negotiations for {booking_id}",
                                         "summary_rows": [{"label": k, "value": v} for k, v in rows], "ctas": []},
                   terminal=True, fallback=fallback)

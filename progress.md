@@ -370,3 +370,12 @@
 - Evidence: console unit 33 passed (7 live skipped). Local TimescaleDB, migrations 006–013 applied, `dev_db.py reset` (5 carriers, 23 sailings): every page renders against it in a local browser; Agent activity is empty until a live negotiation runs.
 - Note: the Tisya .env lacked CARRIER_MERIDIAN_SEED / CARRIER_DHOW_SEED (added in #13); generated in this worktree's .env only.
 - Next: market view with X-ray from `negotiation_sessions` / `negotiation_messages`, from Tisya's hand sketch.
+### 2026-10-18 — recovery fare difference + read-only cards rendering
+- Recovery that rebooks at a higher freight price now asks for the difference: after the replacement carrier
+  confirms, the Rebooked card shows the difference and is followed by a Stripe TEST payment request for exactly
+  that amount (one per replacement booking; settles via commit, poller or "paid"; "Fare difference paid" card).
+  Live via the internal API: $5,250 booking → BEA-201 at $6,470 → Rebooked card + $1,220.00 request. User's own run
+  (BK-03C9DED0 $5,070 → BK-1C4ECC22 $6,540) had no request before this fix.
+- Bug: read-only cards were sent with requires_card_interaction="false"; ASI:One renders a card only when it is
+  "true", so they showed as plain text (recovery transcript, cancellation alert, receipts). Now always "true",
+  read-only cards keep is_terminal. Needs a live ASI:One look.

@@ -41,10 +41,11 @@ def text_message(text: str) -> ChatMessage:
 
 def card_message(narration: str, kind: str, payload: dict, *, terminal: bool = False) -> ChatMessage:
     """Metadata values are strings and `card_payload` is the JSON payload itself (no extra envelope).
-    Forms and approvals never set is_terminal."""
+    ASI:One only renders a block as a card when requires_card_interaction == "true" (a "false" card shows as
+    plain text); read-only cards say so with is_terminal instead. Forms and approvals never set is_terminal."""
     metadata = {
         "card_protocol_version": "1",
-        "requires_card_interaction": "false" if terminal else "true",
+        "requires_card_interaction": "true",
         "card_kind": kind,
         "card_payload": validate_card(kind, payload),
     }

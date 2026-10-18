@@ -97,7 +97,8 @@ uv run python scripts/demo.py audit && uv run python scripts/demo.py evidence
 
 ## Limitations
 
-- Simulated market and withdrawals; no real vessels, risk feeds or freight settlement; recovery never charges or refunds.
+- Simulated market and withdrawals; no real vessels, risk feeds or freight settlement. When a replacement costs more,
+  the buyer is asked for the fare difference by card (Stripe TEST) after the carrier confirms; a cheaper replacement is not refunded.
 - The buyer agent is a logical per-buyer actor in the backend, not a separately deployed uAgent per buyer.
 - uAgents sync replies are matched per agent pair, so the Exchange keeps one message in flight per carrier.
 - ASI:One may only show agent-initiated messages inside a conversation the buyer already has open.

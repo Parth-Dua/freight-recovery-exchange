@@ -42,7 +42,9 @@ ATL-101, $300 auto-rebook limit; Buyer C: DHW-571, unaffected). Services: `./scr
    offer** books straight from it, or **Back to offers**. Choose **Atlas ATL-101**.
 3. Review → **Confirm and pay** → card `4242 4242 4242 4242` → **Booking confirmed** card.
 4. Withdraw **ATL-101** at http://localhost:8800 → ⚠️ SAILING CANCELLATION ALERT card → ~20 s later 🔔 approval
-   card: Beacon BEA-201, ≈$6,470 vs what you paid (≈+$1,200, over your $600) → **Approve** → ✅ REBOOKED card.
+   card: Beacon BEA-201, ≈$6,470 vs what you paid (≈+$1,200, over your $600) → **Approve** → ✅ REBOOKED card
+   (shows the fare difference) followed by a **card payment request for exactly that difference** → pay with 4242 →
+   **Fare difference paid** card.
    Meanwhile Buyer B was auto-rebooked onto Cove COV-301 (+$95, within $300); Buyer C untouched.
    The ✅ REBOOKED card has **See recovery negotiation**: your booking's replacement negotiations only.
    (Auto path instead: set the limit to 2000 → straight to ✅ REBOOKED. Verified: `demo.py rehearse` PASS.)

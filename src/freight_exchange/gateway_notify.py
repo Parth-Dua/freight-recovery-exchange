@@ -39,6 +39,23 @@ class GatewayRecoveryNotifier:
                                           session=session, gateway=gateway, result=result)
         log_event("recovery_card_queued", booking_id=booking.booking_id, key=key, queued=queued)
 
+    async def _fare_difference(self, service, booking: DisruptedBooking, binding, outcome, diff: int, legs,
+                               names: dict) -> dict | None:
+        """Replacement costs more than the original freight: request the difference after the carrier confirmed.
+        Never blocks the Rebooked card; a failure here is logged and the balance can be requested again."""
+        replacement = outcome.diagnostics.get(f"replacement:{booking.booking_id}") if outcome else None
+        if diff <= 0 or not replacement:
+            return None
+        label = (f"{booking.booking_id} → {replacement} on "
+                 + ", ".join(f"{names.get(a.carrier_id, a.carrier_id)} {a.sailing_id}" for a in legs))
+        try:
+            return await service.booking().request_topup(
+                buyer_id=booking.buyer_id, chat_session=binding[1], original_booking_id=booking.booking_id,
+                replacement_booking_id=replacement, amount_minor=diff, currency=booking.currency, label=label)
+        except Exception as exc:
+            log_event("fare_difference_request_failed", booking_id=booking.booking_id, error_type=type(exc).__name__)
+            return None
+
     async def _recovery_trace_cta(self, service, booking: DisruptedBooking, binding, recovery_run_id: str,
                                   chosen: str | None) -> list[dict]:
         """Pre-render this buyer's own recovery transcript; a button opens it instantly. Never blocks the result."""
@@ -94,10 +111,12 @@ class GatewayRecoveryNotifier:
         from freight_exchange.gateway_service import GatewayService
         from freight_exchange.repository import Repository
         service = GatewayService(Repository(self.pool), self.store)
+        topup = None
         for booking, kind, narration in plan_recovery_messages(
                 [b for b in stranded if b.booking_id in bound], proposal, outcome, names):
             binding = bound[booking.booking_id]
             key = f"recovery:{recovery_run_id}:{booking.booking_id}:{kind}"
+            topup = None
             if kind == m.NEEDS_APPROVAL:
                 approval_id = approval_id_for(recovery_run_id, booking.booking_id)
                 plan = [a for a in proposal.assignments if a.booking_id == booking.booking_id]
@@ -114,6 +133,9 @@ class GatewayRecoveryNotifier:
                         ("Extra vs your auto-rebook limit",
                          f"{m.money(new_total - booking.original_price_minor, booking.currency)} vs "
                          f"{m.money(booking.max_additional_cost_minor, booking.currency)}"),
+                        ("If you approve", f"You pay the {m.money(new_total - booking.original_price_minor, booking.currency)} "
+                                           "fare difference by card once the carrier confirms"
+                         if new_total > booking.original_price_minor else "No extra charge"),
                         ("Status", "PENDING APPROVAL — space is held, nothing is booked yet"),
                         ("Expires", "30 minutes")])
             elif kind == m.REBOOKED:
@@ -123,7 +145,16 @@ class GatewayRecoveryNotifier:
                         rows.append(("Replacement", f"{outcome.diagnostics.get('replacement:' + a.booking_id, '?')} on "
                                                     f"{names.get(a.carrier_id, a.carrier_id)} {a.sailing_id}"))
                         rows.append(("Arrives", a.arrival_at.strftime("%b %-d, %H:%M UTC")))
+                legs = [a for a in (outcome.assignments if outcome else ()) if a.booking_id == booking.booking_id]
+                diff = sum(a.quoted_price_minor for a in legs) - booking.original_price_minor
+                if diff > 0:
+                    rows.append(("Fare difference", f"{m.money(diff, booking.currency)} more than your original "
+                                                    "booking — payment request below"))
+                elif diff < 0:
+                    rows.append(("Fare difference", f"{m.money(-diff, booking.currency)} less than your original "
+                                                    "booking — no extra charge"))
                 rows.append(("Status", "RECOVERED — confirmed by the carrier"))
+                topup = await self._fare_difference(service, booking, binding, outcome, diff, legs, names)
                 chosen = ", ".join(f"{names.get(a.carrier_id, a.carrier_id)} {a.sailing_id} ({a.quantity}×20GP)"
                                    for a in (outcome.assignments if outcome else ())
                                    if a.booking_id == booking.booking_id)
@@ -137,4 +168,6 @@ class GatewayRecoveryNotifier:
             headline = {m.NEEDS_APPROVAL: "🔔 ACTION NEEDED: approve your replacement sailing",
                         m.REBOOKED: "✅ REBOOKED: your cargo has a new sailing"}.get(kind, "❌ RECOVERY UPDATE")
             result = {**result, "narration": f"{headline}\n\n{result['narration']}"}
+            if kind == m.REBOOKED and topup is not None:  # the fare-difference payment follows the Rebooked card
+                result = {"kind": "BUNDLE", "followups": [result, topup]}
             await self._push(booking, binding, key, result)
