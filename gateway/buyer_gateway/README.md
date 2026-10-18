@@ -1,4 +1,4 @@
-# Hormuz Exchange — Ocean Freight & Container Shipping Booking Agent
+# Parley — Ocean Freight & Container Shipping Booking Agent
 
 Book container shipping by chat. Tell this agent what cargo you need to ship and where; it gets **freight quotes
 from independent ocean carriers**, **negotiates the shipping rate for you**, books the sailing, takes **card
@@ -65,11 +65,11 @@ Other things you can say:
 
 - Lanes: Jebel Ali (Dubai), Dammam, Sohar → Mumbai, Mundra, Karachi; 20ft containers (20GP), 1–10 per booking.
 - Card payments run in Stripe sandbox (test) mode for this deployment.
-- Carriers, vessels, schedules and rates are a demonstration market operated by Hormuz Exchange.
+- Carriers, vessels, schedules and rates are a demonstration market operated by Parley.
 
 ## Metadata
 
-- Built by Hormuz Exchange (LA Hacks 2026) on Fetch.ai uAgents: Chat Protocol, Interactive Cards and the Agent
+- Built by the Parley team (LA Hacks 2026) on Fetch.ai uAgents: Chat Protocol, Interactive Cards and the Agent
   Payment Protocol; carrier agents are independent uAgents; data on Tiger (TimescaleDB).
 - Keywords: freight, shipping, container shipping, ocean freight, freight quote, shipping rates, cargo booking,
   logistics, freight forwarding, carrier negotiation, rebooking, supply chain disruption, Strait of Hormuz,

@@ -32,7 +32,7 @@ sys.path.insert(0, str(ROOT / "carriers"))
 
 from carrier_agent.agent import build_carrier_agent  # noqa: E402
 DEFAULT_CORRIDOR = "AEJEA-INBOM"
-PORTS = {"AEJEA": "Jebel Ali", "INBOM": "Mumbai (Nhava Sheva)", "SADMM": "Dammam", "INMUN": "Mundra",
+PORTS = {"AEJEA": "Jebel Ali", "INBOM": "Mumbai", "SADMM": "Dammam", "INMUN": "Mundra",
          "OMSOH": "Sohar", "PKKHI": "Karachi"}
 GOALS = {
     "fill_ship": ("Fill the ship", "Concedes faster when space is empty: an unsold slot earns nothing once the ship sails."),
@@ -49,19 +49,21 @@ def lane(code: str) -> str:
 def profile(carrier: dict) -> tuple[str, str]:
     """Short description and README built from the public parts of the fixture (never the price floor)."""
     name, policy = carrier["display_name"], carrier["policy"]
+    poss = f"{name}'" if name.endswith("s") else f"{name}'s"
     goal, goal_line = GOALS.get(policy["business_goal"], (policy["business_goal"], ""))
     corridors = sorted({s.get("corridor", DEFAULT_CORRIDOR) for s in carrier["sailings"]})
     vessels = ", ".join(v["name"] for v in carrier["vessels"])
-    description = (f"{name}'s pricing agent on the Parley freight exchange. Quotes and negotiates container space "
-                   f"under {name}'s own private policy ({goal.lower()}).")
+    description = (f"{poss} pricing agent on the Parley freight exchange. Quotes and negotiates container space "
+                   f"under {poss} own private policy ({goal.lower()}).")
+    # Badges sit below the opening paragraph: Agentverse drops a README's leading H1 + badge block (see PR #26).
     readme = f"""# {name} · Carrier Agent
+
+{name} is one of five independent ocean carriers on **Parley**, an agent-native freight exchange built for
+LA Hacks AI 2026. This agent sells {poss} container space: it quotes, answers counter-offers and holds
+slots, all under a pricing policy only {name} can see.
 
 ![tag:innovationlab](https://img.shields.io/badge/innovationlab-3D8BD3)
 ![tag:hackathon](https://img.shields.io/badge/hackathon-5F43F1)
-
-{name} is one of five independent ocean carriers on **Parley**, an agent-native freight exchange built for
-LA Hacks AI 2026. This agent sells {name}'s container space: it quotes, answers counter-offers and holds
-slots, all under a pricing policy only {name} can see.
 
 ## Strategy: {goal}
 {goal_line}
@@ -81,7 +83,7 @@ Vessels: {vessels}.
 Only the Parley exchange agent: requests from any other sender are refused. Buyers reach it through
 `@freight-parley` on ASI:One. Payment terms: {policy["payment_terms"]}.
 
-Simulated market: fictional carrier, sailings and prices. No real freight is booked.
+Demonstration market: sailings and prices are simulated, and no real freight is booked.
 """
     return description, readme
 
