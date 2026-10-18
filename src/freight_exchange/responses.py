@@ -29,7 +29,7 @@ ROUTE_QUOTES = "request_quotes"
 ROUTE_SELECT = "select_offer"
 ROUTE_REQUOTE = "requote"
 ROUTE_BOOKING = "booking_not_implemented"
-ROUTE_RECOVERY = "recovery_not_implemented"
+ROUTE_RECOVERY = "disruption_status"
 ROUTE_UNSUPPORTED = "unsupported"
 
 STATUS_LINE = (
@@ -43,8 +43,11 @@ EXAMPLE_PROMPT = '"Quote 2x20GP from Jebel Ali to Mumbai, arrive by Oct 23, budg
 _ROUTE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     (ROUTE_REQUOTE, re.compile(r"\b(re-?quote|refresh( the)? (quotes?|offers?)|new quotes?|quote again|fresh quotes?)\b")),
     (ROUTE_SELECT, SELECT_INTENT),
+    # status questions beat booking words ("status of my booking")
+    (ROUTE_RECOVERY, re.compile(
+        r"\b(recover\w*|re-?rout\w*|disrupt\w*|withdraw\w*|rebook\w*|cancel+ed sailing|my bookings?|"
+        r"booking status|status of my|what happened to)\b")),
     (ROUTE_BOOKING, re.compile(r"\b(book\w*|reserv\w*|pay\w*|checkout|purchase|buy|hold|confirm\w*)\b")),
-    (ROUTE_RECOVERY, re.compile(r"\b(recover\w*|re-?rout\w*|disrupt\w*|withdraw\w*|rebook\w*)\b")),
     # strong quote signals beat corridor words ("rates on the Mumbai lane")
     (ROUTE_QUOTES, re.compile(
         r"\b(quot\w*|price\w*|pricing|rates?|cost\w*|how much|offers?|20gp|40gp|40hc|teus?)\b|"
@@ -97,8 +100,6 @@ def static_reply(route: str) -> str:
             "Booking is not active yet, so nothing has been booked, held or charged. "
             f"I can get live carrier quotes now — try: {EXAMPLE_PROMPT}"
         )
-    if route == ROUTE_RECOVERY:
-        return "Shipment recovery is not active yet — no recovery action has been taken."
     return (
         "That's outside what I can do right now. I can list my corridors or fetch live carrier quotes — "
         f"try: {EXAMPLE_PROMPT}"
@@ -277,3 +278,32 @@ def selection_problem_reply(problem: str, offers: list[dict]) -> str:
 
 def no_quotes_yet_reply() -> str:
     return f"There are no offers in this conversation to select yet. Ask for quotes first, e.g. {EXAMPLE_PROMPT}"
+
+
+def disruption_status_reply(withdrawals: list, bookings: list) -> str:
+    """Real Tiger state: withdrawn sailings (public facts) + this buyer's own bookings."""
+    lines = ["**Disruption status (live from Tiger)**"]
+    if withdrawals:
+        for w in withdrawals:
+            lines.append(
+                f"- Sailing **{w.sailing_id}** ({w.carrier_name}, was departing {when(w.departure_at)} UTC) "
+                f"was **withdrawn** by the carrier at {when(w.withdrawn_at)} UTC — {w.reason}. "
+                f"{w.disrupted_bookings} committed booking(s) disrupted."
+            )
+    else:
+        lines.append("- No sailings have been withdrawn. All sailings are operating as scheduled.")
+    lines.append("")
+    if bookings:
+        lines.append("Your bookings:")
+        for b in bookings:
+            flag = " ⚠️" if b.is_disrupted else ""
+            extra = f", replaced by {b.replaced_by_booking_id}" if b.replaced_by_booking_id else ""
+            since = f" since {when(b.disrupted_at)} UTC" if b.disrupted_at else ""
+            lines.append(f"- {b.booking_id}: **{b.status}**{flag}{since} — {b.carrier_name}, sailing {b.sailing_id}{extra}")
+    else:
+        lines.append("You have no bookings on record yet (booking from chat arrives in the next phase).")
+    if any(b.is_disrupted for b in bookings) or any(w.disrupted_bookings for w in withdrawals):
+        lines.append("")
+        lines.append("Automatic recovery is not active yet: disrupted bookings have **not** been rebooked, "
+                     "and nothing has been charged or refunded.")
+    return "\n".join(lines)

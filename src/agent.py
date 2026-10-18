@@ -3,6 +3,7 @@
     start (dedupe + route) ─┬─ quote    : parse → clarify | quote round + one counter per carrier
                             ├─ requote  : re-run the session's latest request
                             ├─ select   : persist OFFER_SELECTED (not a hold, not a booking)
+                            ├─ status   : withdrawn sailings + buyer bookings from Tiger (spec 05 WP6)
                             ├─ info     : corridors / capabilities / not-yet-active replies
                             └───────────┴─→ finish (store turn for dedupe, log, reply)
 
@@ -28,6 +29,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, MessagesState, StateGraph
 
 from freight_exchange import responses as r
+from freight_exchange.booking_status import TigerBookingSeam
 from freight_exchange.carrier_client import CarrierClient
 from freight_exchange.config import carrier_timeout_seconds
 from freight_exchange.observability import log_event, new_request_id
@@ -45,7 +47,7 @@ ERROR_REPLY = "Sorry, I couldn't handle that request. It is safe to retry."
 SERVICE_UNAVAILABLE_REPLY = "The quote service is temporarily unavailable. Nothing was booked; it is safe to retry."
 DUPLICATE_WINDOW_S = 120
 DUPLICATE_WAIT_S = 45
-DATA_ROUTES = {r.ROUTE_CORRIDORS, r.ROUTE_QUOTES, r.ROUTE_REQUOTE, r.ROUTE_SELECT}
+DATA_ROUTES = {r.ROUTE_CORRIDORS, r.ROUTE_QUOTES, r.ROUTE_REQUOTE, r.ROUTE_SELECT, r.ROUTE_RECOVERY}
 _BARE_NUMBER = re.compile(r"^\s*#?\s*(\d{1,2})\s*$")
 
 
@@ -59,6 +61,11 @@ async def get_services() -> tuple[Repository, QuoteService]:
     repo = await get_repository()
     identity = exchange_identity(os.environ["AGENT_URI"])
     return repo, QuoteService(repo, CarrierClient(identity, timeout_s=carrier_timeout_seconds()))
+
+
+async def get_booking_seam() -> TigerBookingSeam:
+    """Real BookingSeam read side (tests monkeypatch this)."""
+    return TigerBookingSeam((await get_repository()).pool)
 
 
 def _last_human_text(state: ExchangeState) -> str:
@@ -204,6 +211,14 @@ async def select(state: ExchangeState, turn: dict) -> dict:
 
 
 @_guarded
+async def status(state: ExchangeState, turn: dict) -> dict:
+    """Spec 05 WP6: disruption status in ASI:One, read from Tiger (recovery itself is Phase 6/7)."""
+    seam = await get_booking_seam()
+    turn["body"] = r.disruption_status_reply(await seam.recent_withdrawals(), await seam.bookings_for_buyer(turn["buyer"]))
+    return {}
+
+
+@_guarded
 async def info(state: ExchangeState, turn: dict) -> dict:
     if turn["route"] == r.ROUTE_CORRIDORS:
         repo, _ = await get_services()
@@ -237,16 +252,16 @@ async def finish(state: ExchangeState) -> dict:
 def _next(state: ExchangeState) -> str:
     route = state["turn"]["route"]
     return {"duplicate": "finish", r.ROUTE_QUOTES: "quote", r.ROUTE_REQUOTE: "requote",
-            r.ROUTE_SELECT: "select"}.get(route, "info")
+            r.ROUTE_SELECT: "select", r.ROUTE_RECOVERY: "status"}.get(route, "info")
 
 
 _builder = StateGraph(ExchangeState)
 for _name, _node in (("start", start), ("quote", quote), ("requote", requote), ("select", select),
-                     ("info", info), ("finish", finish)):
+                     ("status", status), ("info", info), ("finish", finish)):
     _builder.add_node(_name, _node)
 _builder.add_edge(START, "start")
-_builder.add_conditional_edges("start", _next, ["quote", "requote", "select", "info", "finish"])
-for _name in ("quote", "requote", "select", "info"):
+_builder.add_conditional_edges("start", _next, ["quote", "requote", "select", "status", "info", "finish"])
+for _name in ("quote", "requote", "select", "status", "info"):
     _builder.add_edge(_name, "finish")
 _builder.add_edge("finish", END)
 agent = _builder.compile()
