@@ -22,6 +22,8 @@ from uuid import uuid4
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from psycopg import OperationalError
+from psycopg_pool import PoolTimeout
 
 from carrier_console import market_view, ui
 from carrier_console.config import console_port, load_env
@@ -57,13 +59,31 @@ STATIC = Path(__file__).parent / "static"
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     load_env()
-    await get_pool()
     yield
     await close_pools()
 
 
 app = FastAPI(title="Carrier Console", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
+
+
+@app.exception_handler(PoolTimeout)
+@app.exception_handler(OperationalError)
+async def database_unavailable(request: Request, exc: Exception) -> HTMLResponse:
+    """Keep every console entry point navigable when its data source is offline."""
+    carrier_id = request.path_params.get("carrier_id", "atlas")
+    active = next((key for key, _ in ui.NAV if f"/{key}" in request.url.path), "sailings")
+    title = dict(ui.NAV)[active]
+    retry = request.url.path
+    if request.method != "GET":
+        retry = f"/carrier/{carrier_id}/sailings"
+    body = f'''<div class="stack"><div><p class="eyebrow">Carrier operations</p><h1>{escape(title)}</h1></div>
+      {ui.notification("warning", "Live sailing data is unavailable", "The console cannot reach its database. Sailings, bookings and pricing cannot be verified right now.")}
+      <p class="muted">Restore the configured database connection, then retry. If you were submitting a change, check its status before submitting again.</p>
+      <div>{ui.button_link(retry, "Retry connection", "secondary")}
+      {ui.button_link("/market?sample=1&step=disruption", "Open sample market", "ghost")}</div></div>'''
+    return HTMLResponse(ui.shell(title, body, active=active, carrier_id=carrier_id,
+                        carriers=[(carrier_id, carrier_id.title())]), status_code=503)
 
 
 # --- shared --------------------------------------------------------------------------
@@ -323,7 +343,7 @@ def _risk_section(event: RiskEvent, touched: list[SailingRow], carrier_id: str) 
         f'<button class="cds--btn cds--btn--danger--ghost cds--btn--sm" type="submit">Review withdrawal</button></form>',
     ] for s in touched]
     return f"""
-<section class="stack" style="gap: 24px;">
+<section class="stack risk-advisory" style="gap: 24px;">
   <div>
     <p class="muted" style="margin: 0;"><span class="hz"></span> {escape(event.severity.upper())} · {escape(event.category.replace("_", " "))}</p>
     <h2 style="font-size: 1.75rem; font-weight: 400; margin: 8px 0 0;">{escape(event.region_code.replace("-", " ").title())}</h2>
@@ -337,9 +357,19 @@ def _risk_section(event: RiskEvent, touched: list[SailingRow], carrier_id: str) 
 
 @app.get("/carrier/{carrier_id}/risk", response_class=HTMLResponse)
 async def risk(carrier_id: str) -> HTMLResponse:
-    pool = await get_pool()
-    rows = await _carrier_sailings(carrier_id)
-    history = [h for h in await recent_disruptions(pool) if h[1] == carrier_id]
+    try:
+        pool = await get_pool()
+        rows = await _carrier_sailings(carrier_id)
+        history = [h for h in await recent_disruptions(pool) if h[1] == carrier_id]
+        carriers = await list_carriers(pool)
+    except (PoolTimeout, OperationalError):
+        body = f'''<div class="stack"><div><p class="eyebrow">Carrier operations</p><h1>Risk &amp; advisories</h1></div>
+          {ui.notification("warning", "Live sailing data is unavailable", "The console cannot reach its database. Affected sailings, bookings and withdrawal history cannot be verified. No withdrawal actions are available.")}
+          <p class="muted">Restore the configured database connection, then reload this page. The sample market view remains available.</p>
+          <div>{ui.button_link(f"/carrier/{carrier_id}/risk", "Retry connection", "secondary")}
+          {ui.button_link("/market?sample=1&step=disruption", "Open sample market", "ghost")}</div></div>'''
+        return HTMLResponse(ui.shell("Risk", body, active="risk", carrier_id=carrier_id,
+                            carriers=[(carrier_id, carrier_id.title())]), status_code=503)
     sections = "".join(
         _risk_section(event, [s for s in rows if s.is_active and s.corridor_id in event.affected_corridors], carrier_id)
         for event in load_risk_events()
@@ -356,13 +386,16 @@ async def risk(carrier_id: str) -> HTMLResponse:
     highlights = [{"label": ", ".join(ids), "color": color, "lane": lane, "dy": 0} for lane, ids in by_lane.items()]
     body = f"""
 <div class="stack">
-  <div><h1>Risk</h1><p class="lede">Advisories that touch your routes, and what each one would disrupt.</p></div>
-  {ui.network_map(highlights, caption="Every route in the market in gray, yours in color, and both danger zones.")}
+  <div class="risk-overview"><div><p class="eyebrow">Carrier operations · Simulated advisories</p>
+    <h1>Risk &amp; advisories</h1><p class="lede">Review the exposure. You decide whether a sailing is withdrawn.</p>
+    <dl class="risk-summary"><div><dt>Affected active sailings</dt><dd class="mono">{sum(s.is_active and any(s.corridor_id in e.affected_corridors for e in load_risk_events()) for s in rows)}</dd></div>
+    <div><dt>Advisories</dt><dd class="mono">{len(load_risk_events())}</dd></div></dl></div>
+    <div class="route-panel">{ui.network_map(highlights, caption="Your routes in color. Advisory areas are simulated.")}</div></div>
   {sections}
   <div class="cds--data-table-container"><div class="cds--data-table-header"><h2 class="cds--data-table-header__title">Withdrawal history</h2></div>
-    <table class="cds--data-table cds--data-table--md"><thead><tr><th>Time</th><th>Sailing</th><th>By</th><th>Reason</th></tr></thead><tbody>{log}</tbody></table></div>
+    <div class="table-scroll"><table class="cds--data-table cds--data-table--md"><thead><tr><th>Time</th><th>Sailing</th><th>By</th><th>Reason</th></tr></thead><tbody>{log}</tbody></table></div></div>
 </div>"""
-    return await _page("Risk", body, active="risk", carrier_id=carrier_id)
+    return HTMLResponse(ui.shell("Risk", body, active="risk", carrier_id=carrier_id, carriers=carriers))
 
 
 # --- Agent activity ---------------------------------------------------------------------
@@ -382,19 +415,21 @@ def _activity_row(a: AgentAction, policy: dict) -> list[str]:
     if a.sender_role == "buyer_agent":
         check = '<span class="muted">Incoming</span>'
     elif unit is None:
-        check = '<span class="muted">n/a</span>'
+        check = ui.tag("Held its price", "gray")
     elif unit < floor:
         check = ui.tag(f"Below floor {ui.money(floor)}", "red")
     else:
         check = ui.tag("Above floor", "green")
     who = "Recovery" if a.kind == "recovery" else "Booking"
     action = _ACTION.get((a.sender_role, a.message_type), a.message_type.replace("_", " ").capitalize())
-    price = f'<span class="mono">{ui.money(unit)}</span>' + (f' <span class="muted">× {a.quantity}</span>' if a.quantity else "")
+    price = ('<span class="muted">no change</span>' if unit is None else
+             f'<span class="mono">{ui.money(unit)}</span>' + (f' <span class="muted">× {a.quantity}</span>' if a.quantity else ""))
+    buyer = a.buyer_agent_key.split(":")[-1].replace("buyer_", "Buyer ")[-10:]
     return [
         f'<span class="mono">{a.ts:%H:%M:%S}</span>',
         escape(action),
         f'<span class="mono">{escape(a.sailing_id or "n/a")}</span>',
-        f'{who} · <span class="mono">{escape(a.buyer_agent_key[-6:])}</span>',
+        f'{who} · <span class="mono">{escape(buyer)}</span>',
         price,
         f"Round {a.round}",
         check,
