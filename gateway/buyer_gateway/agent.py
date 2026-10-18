@@ -64,9 +64,15 @@ def build_gateway(*, seed: str, port: int, backend: BackendClient, name: str = "
                 await send_in_session(ctx, recipient, session, text_message(result["narration"]))
             await send_in_session(ctx, recipient, session, RequestPayment(
                 accepted_funds=[Funds(currency=p["currency"], amount=p["amount"], payment_method=p["method"])],
-                recipient=p["recipient"], deadline_seconds=int(p["deadline_seconds"]), reference=p["reference"],
+                recipient=p["recipient"] or agent.address,  # card payments: the seller agent, not a wallet
+                deadline_seconds=int(p["deadline_seconds"]), reference=p["reference"],
                 description=p["description"], metadata=p.get("metadata") or {}))
             return
+        if result.get("kind") == "PAYMENT_COMPLETE":  # settled outside CommitPayment (hosted link, poller)
+            await send_in_session(ctx, recipient, session, CompletePayment(transaction_id=result.get("transaction_id")))
+        elif result.get("kind") == "PAYMENT_CANCEL":
+            await send_in_session(ctx, recipient, session, CancelPayment(transaction_id=result.get("transaction_id"),
+                                                                         reason=result.get("reason") or ""))
         try:
             msg = message_for(result)
         except CardWireError as exc:  # never silently lose the answer: fall back to narration text

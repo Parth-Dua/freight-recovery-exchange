@@ -1,9 +1,11 @@
 """Drive the buyer card journey through the internal Exchange API exactly as the gateway would (no ASI:One).
 
-Usage: uv run python scripts/card_flow_smoke.py [--api http://127.0.0.1:8900] [--quantity 1]
+Usage: uv run python scripts/card_flow_smoke.py [--api http://127.0.0.1:8900] [--quantity 1] [--pay]
 Needs: carriers + Exchange API running. With PAYMENT_MODE=dev on that API the booking completes without
-payment (labelled development); with fet_testnet it stops at a real RequestPayment and then exercises the
-refusal paths (missing wallet, fake transaction), releasing the hold. Not ASI:One evidence.
+payment (labelled development). With stripe_test (default) it stops at a real RequestPayment carrying two
+Stripe TEST Checkout sessions, checks that "paid" before paying is refused, and with --pay pays the hosted
+link with the 4242 test card (headless Chrome) and waits for CompletePayment + receipt from the poller.
+With fet_testnet it exercises the refusal paths (missing wallet), releasing the hold. Not ASI:One evidence.
 """
 
 import argparse
@@ -17,7 +19,7 @@ from dotenv import dotenv_values
 GATEWAY = "agent1qsmokegateway"
 
 
-def main(api: str, quantity: int) -> None:
+def main(api: str, quantity: int, pay: bool = False) -> None:
     headers = {"x-gateway-token": dotenv_values(".env")["GATEWAY_BACKEND_TOKEN"]}
     buyer, session = f"agent1qsmokebuyer{uuid.uuid4().hex[:6]}", str(uuid.uuid4())
 
@@ -77,6 +79,28 @@ def main(api: str, quantity: int) -> None:
     def event(**body):
         return httpx.post(f"{api}/internal/payment/event", headers=headers, timeout=60, json={
             "sender_agent_address": buyer, "chat_session_id": session, **body}).json()
+    if p["method"] == "stripe":
+        stripe_meta = p["metadata"]["stripe"]
+        print("  metadata.stripe keys:", sorted(stripe_meta), "| all strings:",
+              all(isinstance(v, str) for v in stripe_meta.values()), "| hosted link:", bool(p["metadata"].get("checkout_url")))
+        print("7 'paid' before paying ->", say("paid")["text"][:90])
+        funds = {"currency": "USD", "amount": p["amount"], "payment_method": "stripe"}
+        v = event(type="commit", reference=p["reference"], transaction_id="cs_test_forged", funds=funds, metadata={})
+        print("  forged commit ->", v["action"], "|", (v.get("followups") or [{}])[0].get("text", "")[:80])
+        if not pay:
+            return
+        import subprocess
+        out = subprocess.run(["uv", "run", "--with", "playwright", "python", "scripts/pay_test_checkout.py",
+                              p["metadata"]["checkout_url"]], capture_output=True, text=True, timeout=180)
+        print("8 paid hosted link with 4242 test card ->", (out.stdout or out.stderr).strip().splitlines()[-1][:100])
+        pushed = outbox(90)
+        for r in pushed:
+            print("9 pushed:", r["kind"], "| tx", (r.get("transaction_id") or "")[:14], "|",
+                  [(f.get("card_kind"), f.get("narration", "")[:70]) for f in r.get("followups") or []])
+        v = event(type="commit", reference=p["reference"], transaction_id=pushed[0].get("transaction_id") or "",
+                  funds=funds, metadata={})
+        print("10 duplicate commit after settlement ->", v["action"], "(no second booking)")
+        return
     funds = {"currency": "FET", "amount": p["amount"], "payment_method": "fet_direct"}
     v = event(type="commit", reference=p["reference"], transaction_id="A" * 64, funds=funds, metadata={})
     print("7 commit without wallet ->", v["action"], "|", v["reason"][:90])
@@ -86,5 +110,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--api", default="http://127.0.0.1:8900")
     parser.add_argument("--quantity", type=int, default=1)
+    parser.add_argument("--pay", action="store_true", help="pay the Stripe TEST hosted link with the 4242 card")
     args = parser.parse_args()
-    main(args.api, args.quantity)
+    main(args.api, args.quantity, args.pay)

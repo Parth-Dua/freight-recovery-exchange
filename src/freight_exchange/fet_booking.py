@@ -1,10 +1,13 @@
-"""Booking with the Fetch Payment Protocol fee (FET stable testnet), v2 phases 2-3.
+"""Booking paid over the Fetch Payment Protocol (gateway = seller), v2 phases 2-3.
 
-    selected offer -> carrier hold -> payment record (REQUESTED) -> RequestPayment (gateway)
-    -> CommitPayment = a claim -> business checks here -> on-chain proof (gateway, cosmpy)
-    -> VERIFIED (tx id unique) -> carrier CONFIRM_BOOKING -> receipt card
-The FET fee pays for the demo booking-coordination service only; freight stays a simulated USD figure.
-`dev` mode (PAYMENT_MODE=dev) confirms without any payment and says so; it is for regression only.
+`stripe_test` (default, user decision 2026-10-18): Stripe TEST card checkout carried in the protocol.
+    selected offer -> carrier hold -> payment record (REQUESTED) + two Stripe TEST Checkout sessions
+    (embedded, rendered from RequestPayment.metadata["stripe"]; hosted, a fallback link in the chat)
+    -> paid: CommitPayment (transaction_id = session id) or the poller / "paid" in chat
+    -> server-side Stripe retrieve (paid, test mode, intent + amount match) -> VERIFIED (session id unique)
+    -> carrier CONFIRM_BOOKING -> CompletePayment + receipt card. The unpaid sibling session is expired.
+`fet_testnet`: tiny testnet FET fee, CommitPayment = claim, on-chain proof via the gateway (cosmpy).
+`dev`: confirms without any payment and says so; regression only.
 """
 
 from __future__ import annotations
@@ -20,22 +23,28 @@ from freight_exchange import cards
 from freight_exchange.booking import claim_code, claim_hash, hold_ttl_seconds
 from freight_exchange.carrier_client import CarrierRef
 from freight_exchange.gateway_service import fet_amount, text, to_atestfet
+from freight_exchange.payments import (
+    PAYMENT_PENDING, PAYMENT_VERIFIED_TEST, Expected, StripeTestPayments, booking_fee_minor, classify_session)
 from freight_exchange.repository import _event
+from freight_exchange.responses import money
 
 DENOM = "atestfet"
 NETWORK = "stable-testnet"
 PAYMENT_DEADLINE_MARGIN = timedelta(minutes=3)  # leave time to verify and confirm before the hold lapses
 MAX_PAYMENT_WINDOW = timedelta(minutes=10)
+STRIPE_PAYMENT_WINDOW = timedelta(minutes=25)  # card entry takes longer; still inside the carrier hold
+TEST_CARD = "4242 4242 4242 4242"
+MODES = ("stripe_test", "fet_testnet", "dev")
 
 
 def payment_mode() -> str:
-    mode = os.getenv("PAYMENT_MODE", "fet_testnet")
-    if mode not in ("fet_testnet", "dev"):
-        raise ValueError("PAYMENT_MODE must be fet_testnet or dev")
+    mode = os.getenv("PAYMENT_MODE", "stripe_test")
+    if mode not in MODES:
+        raise ValueError(f"PAYMENT_MODE must be one of {', '.join(MODES)}")
     if mode == "fet_testnet" and os.getenv("FET_USE_TESTNET", "true").lower() != "true":
         raise RuntimeError("FET mainnet is not allowed in the demo (FET_USE_TESTNET must be true)")
-    if os.getenv("LEGACY_STRIPE_CHECKOUT_ENABLED", "false").lower() == "true" and mode == "fet_testnet":
-        raise RuntimeError("Legacy Stripe checkout and the FET fee are mutually exclusive")
+    if os.getenv("LEGACY_STRIPE_CHECKOUT_ENABLED", "false").lower() == "true" and mode != "dev":
+        raise RuntimeError("Legacy Stripe checkout and the payment-protocol rail are mutually exclusive")
     return mode
 
 
@@ -44,10 +53,17 @@ def _carrier(intent: dict) -> CarrierRef:
 
 
 class FetBookingService:
-    def __init__(self, repo, holds, claim_secret: bytes):
+    def __init__(self, repo, holds, claim_secret: bytes, stripe: StripeTestPayments | None = None):
         self.repo = repo
         self.holds = holds
         self.claim_secret = claim_secret
+        self._stripe = stripe
+
+    @property
+    def stripe(self) -> StripeTestPayments:
+        if self._stripe is None:
+            self._stripe = StripeTestPayments()  # refuses anything but an sk_test_ key
+        return self._stripe
 
     # ---- confirm on the review card ----------------------------------------------------
     async def start(self, *, buyer_id: str, session_id: str, request_id: str, offer_id: str,
@@ -89,6 +105,8 @@ class FetBookingService:
             return await self._confirm(intent_id, payment_reference=f"dev:{intent_id}", hold_id=hold.hold_id,
                                        hold_expires_at=hold.expires_at,
                                        payment_line="Development mode: no payment was requested or taken")
+        if mode == "stripe_test":
+            return await self._request_stripe(intent_id, hold_id=hold.hold_id, hold_expires_at=hold.expires_at)
         return await self._request_payment(intent_id, hold_id=hold.hold_id, hold_expires_at=hold.expires_at,
                                            gateway_wallet=gateway_wallet)
 
@@ -138,6 +156,13 @@ class FetBookingService:
     async def _resume(self, intent: dict, gateway_wallet: str) -> dict:
         if intent["status"] == "BOOKING_CONFIRMED":
             return await self._receipt(intent)
+        if intent["status"] == "PAYMENT_PENDING" and (intent.get("payment_reference") or "").startswith("stripepay_"):
+            row = await self._payment(intent["payment_reference"])
+            if row and row["status"] in ("REQUESTED", "COMMIT_RECEIVED") and row["deadline_at"] > datetime.now(timezone.utc):
+                settled = await self.check_stripe(row)
+                if settled is not None:
+                    return settled
+                return await self._stripe_request_again(row, intent)
         if intent["status"] == "PAYMENT_PENDING" and intent.get("payment_reference", "").startswith("fetpay_"):
             async with self.repo.pool.connection() as conn:
                 row = await (await conn.execute(
@@ -146,6 +171,211 @@ class FetBookingService:
             if row and row[3] == "REQUESTED" and row[2] > datetime.now(timezone.utc):
                 return self._payment_request(intent["payment_reference"], Decimal(row[0]), row[1], row[2])
         return text(f"This booking is {intent['status'].replace('_', ' ').lower()}; nothing new was charged.")
+
+    # ---- Stripe TEST over the payment protocol -------------------------------------------
+    async def _request_stripe(self, intent_id: str, *, hold_id: str, hold_expires_at: datetime) -> dict:
+        now = datetime.now(timezone.utc)
+        deadline = min(hold_expires_at - PAYMENT_DEADLINE_MARGIN, now + STRIPE_PAYMENT_WINDOW)
+        if deadline <= now + timedelta(seconds=120):
+            await self._release(intent_id, hold_id, "carrier hold too short to pay safely")
+            return text("The carrier's hold is too short to pay safely, so I released it and did not ask for "
+                        "payment. Please choose the offer again.")
+        intent = await self._intent(intent_id)
+        fee = booking_fee_minor()
+        total = intent["freight_minor"] + fee
+        reference, payment_id = f"stripepay_{uuid4().hex[:16]}", f"pay_{uuid4().hex[:16]}"
+        label = (f"{intent['display_name']} {intent['sailing_id']}: {intent['origin_port']} -> "
+                 f"{intent['destination_port']}, {intent['quantity']}x20GP")
+        common = dict(intent_id=intent_id, request_id=intent["request_id"], offer_id=intent["offer_id"],
+                      freight_minor=intent["freight_minor"], fee_minor=fee, currency=intent["currency"],
+                      freight_label=label, expires_at=deadline, reference=reference)
+        embedded = await self.stripe.create_checkout(**common, embedded=True)
+        hosted = await self.stripe.create_checkout(**common, embedded=False)
+        async with self.repo.pool.connection() as conn, conn.transaction():
+            await conn.execute(
+                """INSERT INTO payment_records (payment_id, provider, reference, purpose, amount_minor, currency, status,
+                       intent_id, method, network, funds_amount, funds_currency, sender_agent_address, chat_session_id,
+                       hold_id, deadline_at, livemode, fee_minor, freight_minor, checkout_url, stripe_session_ids,
+                       updated_at)
+                   VALUES (%s, 'stripe', %s, 'simulated freight + booking service fee (Stripe TEST)', %s, %s,
+                           'REQUESTED', %s, 'stripe', 'stripe-test', %s, %s, %s, %s, %s, %s, false, %s, %s, %s, %s,
+                           now())""",
+                (payment_id, reference, total, intent["currency"], intent_id, f"{total / 100:.2f}", intent["currency"],
+                 intent["buyer_id"], intent["session_id"], hold_id, deadline, fee, intent["freight_minor"], hosted.url,
+                 [embedded.session_id, hosted.session_id]))
+            await conn.execute(
+                """UPDATE booking_intents SET status = 'PAYMENT_PENDING', hold_id = %s, hold_expires_at = %s,
+                       payment_id = %s, fee_minor = %s, updated_at = now() WHERE intent_id = %s""",
+                (hold_id, hold_expires_at, payment_id, fee, intent_id))
+            await _event(conn, "PAYMENT_REQUESTED", "payment", payment_id, correlation_id=intent["correlation_id"],
+                         carrier_id=intent["carrier_id"],
+                         payload={"provider": "stripe", "method": "stripe", "mode": "test", "amount_minor": total,
+                                  "currency": intent["currency"], "hold_id": hold_id, "reference": reference})
+        return self._stripe_request(reference, total, intent["currency"], embedded.session_id, embedded.client_secret,
+                                    hosted.url, deadline, intent["display_name"])
+
+    @staticmethod
+    def _stripe_request(reference: str, total: int, currency: str, session_id: str, client_secret: str | None,
+                        hosted_url: str | None, deadline: datetime, carrier: str) -> dict:
+        seconds = max(60, int((deadline - datetime.now(timezone.utc)).total_seconds()))
+        narration = (f"{carrier} is holding your space until {deadline.strftime('%H:%M')} UTC. "
+                     f"Pay {money(total, currency)} by card to confirm. Stripe TEST mode, so no real money moves: "
+                     f"use card {TEST_CARD}, any future expiry date and any CVC.")
+        if hosted_url:
+            narration += f"\n\nIf no payment card appears here, pay at this secure Stripe link instead:\n{hosted_url}"
+        stripe_meta = {"ui_mode": "embedded", "publishable_key": os.getenv("STRIPE_TEST_PUBLISHABLE", ""),
+                       "checkout_session_id": session_id, "currency": currency.lower(), "amount_cents": str(total)}
+        if client_secret:
+            stripe_meta["client_secret"] = client_secret
+        metadata = {"stripe": stripe_meta, "service": "booking"}
+        if hosted_url:
+            metadata["checkout_url"] = hosted_url
+        return {"kind": "PAYMENT_REQUEST", "narration": narration,
+                "payment": {"reference": reference, "amount": f"{total / 100:.2f}", "currency": currency,
+                            "method": "stripe", "recipient": "", "deadline_seconds": seconds,
+                            "description": (f"Hormuz Exchange booking: {money(total, currency)} (simulated freight + "
+                                            "booking service fee). Stripe TEST mode; no real money moves."),
+                            "metadata": metadata}}
+
+    async def _stripe_request_again(self, row: dict, intent: dict) -> dict:
+        embedded_id = (row["stripe_session_ids"] or [None])[0]
+        secret = None
+        if embedded_id:
+            try:
+                secret = getattr(await self.stripe.retrieve(embedded_id), "client_secret", None)
+            except Exception:  # the hosted link still works
+                secret = None
+        return self._stripe_request(row["reference"], int(row["amount_minor"]), row["currency"], embedded_id or "",
+                                    secret, row["checkout_url"], row["deadline_at"], intent["display_name"])
+
+    async def _commit_stripe(self, row: dict, env: dict) -> dict:
+        session_id = (env.get("transaction_id") or "").strip()
+        funds = env.get("funds") or {}
+        if funds.get("payment_method") not in (None, "", "stripe"):
+            return {"action": "cancel", "transaction_id": session_id or None, "reason": "wrong payment method",
+                    "followups": [text("That payment used a different method than the one I requested; nothing was "
+                                       "booked. Please pay with the Stripe card form or link.")]}
+        if session_id not in (row["stripe_session_ids"] or []):
+            settled = await self.check_stripe(row)  # the client may report a different id; Stripe is the truth
+            if settled is not None:
+                return settled
+            return {"action": "none", "followups": [text(
+                "I could not match that payment to your checkout yet; I'll keep checking with Stripe and post the "
+                "confirmation here once it's paid.")]}
+        settled = await self._settle_stripe(row, session_id, attempts=4)
+        if settled is not None:
+            return settled
+        return {"action": "none", "followups": [text(
+            "Stripe hasn't confirmed the payment yet. I'll keep checking and post your booking confirmation here "
+            "as soon as it clears; your space stays held meanwhile.")]}
+
+    async def check_stripe(self, row: dict) -> dict | None:
+        """Settle from whichever session (embedded or hosted) Stripe reports as paid; None if neither is paid."""
+        for session_id in row["stripe_session_ids"] or []:
+            settled = await self._settle_stripe(row, session_id, attempts=1)
+            if settled is not None:
+                return settled
+        return None
+
+    async def _settle_stripe(self, row: dict, session_id: str, *, attempts: int) -> dict | None:
+        import asyncio
+
+        expected = Expected(row["intent_id"], int(row["amount_minor"]), row["currency"])
+        for i in range(attempts):
+            verdict = classify_session(await self.stripe.retrieve(session_id), expected)
+            if verdict.status != PAYMENT_PENDING:
+                break
+            if i + 1 < attempts:
+                await asyncio.sleep(1.5)
+        if verdict.status == PAYMENT_PENDING:
+            return None
+        if verdict.status != PAYMENT_VERIFIED_TEST:
+            # an expired sibling session is normal; only a mismatch or live-mode session is a real failure
+            if verdict.detail == "checkout expired without payment":
+                return None
+            await self._record(row, "VERIFICATION_FAILED", tx=None, error=verdict.detail, event="PAYMENT_FAILED",
+                               proof={"session": session_id[:24], "provider_status": verdict.provider_status})
+            await self._abandon(row, reason=verdict.detail)
+            return self._cancel(session_id, f"Payment not accepted: {verdict.detail}. Nothing was booked.")
+        intent = await self._intent(row["intent_id"])
+        hold_ok = intent["status"] == "PAYMENT_PENDING" and intent["hold_expires_at"] > datetime.now(timezone.utc)
+        proof = {"stripe_session": session_id, "provider_status": verdict.provider_status, "livemode": False,
+                 "amount_minor": int(row["amount_minor"]), "currency": row["currency"]}
+        async with self.repo.pool.connection() as conn:  # single winner between commit, poller and "paid"
+            won = await (await conn.execute(
+                """UPDATE payment_records SET status = %s, provider_tx_id = %s, provider_status = %s,
+                       verification = %s, provider_verified_at = now(), verified_at = now(), updated_at = now()
+                   WHERE reference = %s AND status IN ('REQUESTED', 'COMMIT_RECEIVED') RETURNING payment_id""",
+                ("VERIFIED" if hold_ok else "RECONCILIATION_REQUIRED", session_id, verdict.provider_status,
+                 _jsonb(proof), row["reference"]))).fetchone()
+        if won is None:  # another path settled it first: same answer, never a second booking
+            latest = await self._payment(row["reference"])
+            return await self._completed(latest) if latest["status"] == "VERIFIED" else {"action": "none", "followups": []}
+        for other in row["stripe_session_ids"] or []:
+            if other != session_id:
+                await self.stripe.expire(other)
+        if not hold_ok:
+            async with self.repo.pool.connection() as conn:
+                await _event(conn, "PAYMENT_RECONCILIATION_REQUIRED", "payment", row["payment_id"],
+                             correlation_id=row["reference"], payload={"reference": row["reference"],
+                                                                       "detail": "paid after the carrier hold ended"})
+            await self.repo.update_intent(row["intent_id"], "PAYMENT_RECONCILIATION_REQUIRED",
+                                          detail="Stripe TEST payment verified after the carrier hold ended")
+            return self._cancel(session_id, "Your test payment arrived after the carrier's hold ended, so I could "
+                                "not book that space. It is recorded for reconciliation; nothing was booked.")
+        async with self.repo.pool.connection() as conn:
+            await _event(conn, "PAYMENT_VERIFIED", "payment", row["payment_id"], correlation_id=row["reference"],
+                         payload={"reference": row["reference"], "status": "VERIFIED", "provider": "stripe",
+                                  "tx": session_id[:16], "intent_id": row["intent_id"]})
+        await self.repo.update_intent(row["intent_id"], "PAYMENT_VERIFIED_TEST", detail="Stripe TEST payment verified")
+        receipt = await self._confirm(row["intent_id"], payment_reference=row["reference"], hold_id=intent["hold_id"],
+                                      hold_expires_at=intent["hold_expires_at"],
+                                      payment_line=f"{money(int(row['amount_minor']), row['currency'])} paid by card "
+                                                   "(Stripe TEST mode, verified with Stripe)",
+                                      already_held=True)
+        return {"action": "complete", "transaction_id": session_id, "chat_session_id": row["chat_session_id"],
+                "followups": [receipt]}
+
+    async def open_stripe_payments(self, sender: str | None = None) -> list[dict]:
+        sql = "SELECT * FROM payment_records WHERE provider = 'stripe' AND status IN ('REQUESTED', 'COMMIT_RECEIVED')"
+        args: tuple = ()
+        if sender:
+            sql += " AND sender_agent_address = %s"
+            args = (sender,)
+        async with self.repo.pool.connection() as conn:
+            cur = await conn.execute(sql + " ORDER BY created_at DESC", args)
+            names = [c.name for c in cur.description]
+            return [dict(zip(names, r)) for r in await cur.fetchall()]
+
+    async def poll_stripe(self) -> list[tuple[dict, dict]]:
+        """No webhook in mailbox mode: settle paid sessions, close windows that ran out. Returns (row, result)."""
+        out = []
+        for row in await self.open_stripe_payments():
+            settled = await self.check_stripe(row)
+            if settled is not None:
+                out.append((row, settled))
+                continue
+            if row["deadline_at"] <= datetime.now(timezone.utc):
+                for session_id in row["stripe_session_ids"] or []:
+                    await self.stripe.expire(session_id)
+                settled = await self.check_stripe(row)  # paid in the last instant before expiry
+                if settled is not None:
+                    out.append((row, settled))
+                    continue
+                await self._record(row, "EXPIRED", tx=None, error="payment window closed", event="PAYMENT_EXPIRED")
+                await self._abandon(row, reason="payment window closed")
+                out.append((row, {"action": "cancel", "transaction_id": None, "reason": "payment window closed",
+                                  "chat_session_id": row["chat_session_id"],
+                                  "followups": [text("The payment window closed, so I released the carrier's hold. "
+                                                     "Nothing was charged or booked; say 'ship cargo' to start again.")]}))
+        return out
+
+    async def _release(self, intent_id: str, hold_id: str, reason: str) -> None:
+        intent = await self._intent(intent_id)
+        if intent:
+            await self.holds.release_hold(_carrier(intent), hold_id=hold_id, request_id=intent["request_id"],
+                                          negotiation_id=intent["negotiation_id"], correlation_id=intent["correlation_id"])
+        await self.repo.update_intent(intent_id, "RELEASED", detail=reason)
 
     # ---- payment protocol events from the gateway --------------------------------------
     async def on_commit(self, env: dict) -> dict:
@@ -160,6 +390,8 @@ class FetBookingService:
             return await self._completed(row)
         if row["status"] not in ("REQUESTED", "COMMIT_RECEIVED"):
             return self._cancel(tx, f"This payment is already {row['status'].lower()}; nothing new was booked.")
+        if row["provider"] == "stripe":
+            return await self._commit_stripe(row, env)
         problem = None
         funds = env.get("funds") or {}
         if row["deadline_at"] <= datetime.now(timezone.utc):
@@ -229,7 +461,7 @@ class FetBookingService:
         async with self.repo.pool.connection() as conn:
             ref = (await (await conn.execute(
                 "SELECT reference FROM payment_records WHERE sender_agent_address = %s AND chat_session_id = %s "
-                "AND provider = 'fetch' AND status = 'REQUESTED' ORDER BY created_at DESC LIMIT 1",
+                "AND provider IN ('fetch', 'stripe') AND status = 'REQUESTED' ORDER BY created_at DESC LIMIT 1",
                 (env.get("sender_agent_address"), env.get("chat_session_id")))).fetchone())
         row = await self._payment(ref[0]) if ref else None
         if row is None:
@@ -292,7 +524,8 @@ class FetBookingService:
         if not reference:
             return None
         async with self.repo.pool.connection() as conn:
-            cur = await conn.execute("SELECT * FROM payment_records WHERE reference = %s AND provider = 'fetch'", (reference,))
+            cur = await conn.execute("SELECT * FROM payment_records WHERE reference = %s "
+                                     "AND provider IN ('fetch', 'stripe')", (reference,))
             row = await cur.fetchone()
             return dict(zip([c.name for c in cur.description], row)) if row else None
 
@@ -328,3 +561,8 @@ class FetBookingService:
             await self.holds.release_hold(_carrier(intent), hold_id=intent["hold_id"], request_id=intent["request_id"],
                                           negotiation_id=intent["negotiation_id"], correlation_id=intent["correlation_id"])
             await self.repo.update_intent(row["intent_id"], "RELEASED", detail=reason)
+
+
+def _jsonb(value: dict):
+    from psycopg.types.json import Jsonb
+    return Jsonb(value)

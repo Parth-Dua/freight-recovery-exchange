@@ -27,6 +27,7 @@ SHIP_INTENT = re.compile(
     r"^(start|new shipment|ship cargo|book cargo)$|\b(ship|send|move|book)\b.{0,40}\b(cargo|containers?|freight|shipment)\b"
     r"|\bi (have|need to ship) cargo\b", re.IGNORECASE)
 MENTION = re.compile(r"@[\w.-]+")
+PAID = re.compile(r"(i\s*(have|'ve)\s+)?(just\s+)?(paid|payment\s+(done|made|complete|completed|sent)|done paying)[.!]*")
 
 
 def fet_amount() -> Decimal:
@@ -63,6 +64,14 @@ def parse_action(text: str) -> dict | None:
     flat.update({k: v for k, v in data.items() if not isinstance(v, dict)})
     flat.update(selection)
     return flat if flat.get("action") else None
+
+
+def protocol_result(verdict: dict) -> dict:
+    """A payment verdict as a chat result the gateway can deliver (CompletePayment/CancelPayment + followups)."""
+    action = verdict.get("action")
+    kind = {"complete": "PAYMENT_COMPLETE", "cancel": "PAYMENT_CANCEL"}.get(action, "BUNDLE")
+    return {"kind": kind, "transaction_id": verdict.get("transaction_id"), "reason": verdict.get("reason", ""),
+            "followups": verdict.get("followups") or []}
 
 
 def card(narration: str, kind: str, payload: dict, *, terminal: bool = False, fallback_text: str = "") -> dict:
@@ -172,6 +181,8 @@ class GatewayService:
         lowered = plain.lower()
         if SHIP_INTENT.search(plain) and not re.search(r"\d", plain):
             return await self.cargo_form(ctx)
+        if PAID.fullmatch(lowered):
+            return await self.check_paid(ctx)
         if lowered in ("payment test", "test payment"):
             return await self.payment_smoke(ctx)
         if lowered in ("notify test", "test notification"):
@@ -342,13 +353,14 @@ class GatewayService:
                    "total_price_minor": s.current.total_price_minor, "departure_at": s.current.departure_at,
                    "arrival_at": s.current.arrival_at, "expires_at": s.current.expires_at,
                    "best": s.current.total_price_minor == best, "negotiated": s.round > 0,
-                   "trace": "Negotiation: " + " → ".join(s.trace) + "."} for s in result.finals]
+                   "opening_minor": s.opening_minor, "counters": s.round} for s in result.finals]
         card_id = await self.new_card(ctx, "carousel", "offer_carousel", request_id)
         sessions = len(result.sessions)
         return final_offers_carousel(
             request_id=request_id, offers=offers, card_instance_id=card_id,
-            header=(f"Your buyer agent negotiated with {sessions} carrier agent(s) in parallel (up to two counters "
-                    f"each, your limits kept private). {len(offers)} final offer(s), ranked for your priority."))
+            header=(f"Your buyer agent negotiated with {sessions} carrier{'s' if sessions != 1 else ''} in parallel "
+                    f"and kept your limits private. {len(offers)} final offer{'s' if len(offers) != 1 else ''}, "
+                    "ranked for your priority."))
 
     async def negotiate_legacy(self, ctx: ChatContext, request_id: str, form: dict) -> dict:
         """Rollback path: the Part 1 quote round (one counter per carrier)."""
@@ -373,12 +385,11 @@ class GatewayService:
         for r in finals:
             f = r.final_offer
             negotiated = r.counter is not None and r.counter.new_offer is not None
-            trace = (f"Opened at {money_str(r.opening.offer.total_price_minor)}, negotiated to "
-                     f"{money_str(f.total_price_minor)}." if negotiated else "")
             offers.append({"offer_id": f.offer_id, "carrier_name": r.carrier.display_name, "sailing_id": f.sailing_id,
                            "quantity": f.quantity, "total_price_minor": f.total_price_minor,
                            "departure_at": f.departure_at, "arrival_at": f.arrival_at, "expires_at": f.expires_at,
-                           "best": f.total_price_minor == best, "negotiated": negotiated, "trace": trace})
+                           "best": f.total_price_minor == best, "negotiated": negotiated,
+                           "opening_minor": r.opening.offer.total_price_minor, "counters": 1 if negotiated else 0})
         card_id = await self.new_card(ctx, "carousel", "offer_carousel", request_id)
         return final_offers_carousel(request_id=request_id, offers=offers, card_instance_id=card_id,
                                      header=f"{len(offers)} final offer(s) for {request_id}. Choose one to review.")
@@ -412,8 +423,11 @@ class GatewayService:
         offer = await self.repo.selected_offer(request_id)
         review_id = await self.new_card(ctx, "review", "booking_review", request_id)
         from freight_exchange.fet_booking import payment_mode
+        from freight_exchange.payments import booking_fee_minor
+        mode = payment_mode()
         return booking_review(request_id=request_id, offer=offer, card_instance_id=review_id,
-                              fee_fet=fet_amount() if payment_mode() == "fet_testnet" else None)
+                              fee_fet=fet_amount() if mode == "fet_testnet" else None,
+                              stripe_fee_minor=booking_fee_minor() if mode == "stripe_test" else None)
 
     async def _reactivate(self, card_id: str) -> None:
         async with self.repo.pool.connection() as conn:
@@ -495,6 +509,33 @@ class GatewayService:
                                                                    "pushed from the outbox into this same chat."))
         return text("Queued a background notification; it should appear here within a few seconds.")
 
+    # ---- Stripe TEST settlement outside CommitPayment ------------------------------------
+    async def check_paid(self, ctx: ChatContext) -> dict:
+        """Buyer says "paid": ask Stripe now (a chat claim is never proof)."""
+        rows = await self.booking().open_stripe_payments(sender=ctx.sender)
+        if not rows:
+            return text("I don't see a card payment waiting for you. If you just paid, your confirmation is "
+                        "already above; otherwise say 'ship cargo' to start a booking.")
+        settled = await self.booking().check_stripe(rows[0])
+        if settled is None:
+            return text("Stripe hasn't confirmed that payment yet. I'll keep checking and post your booking "
+                        "confirmation here as soon as it clears; your space stays held meanwhile.")
+        return protocol_result(settled)
+
+    async def poll_payments(self) -> int:
+        """Background: settle Stripe sessions paid via the hosted link and close lapsed windows; push results."""
+        pushed = 0
+        for row, verdict in await self.booking().poll_stripe():
+            binding = await self.store.latest_binding(row["sender_agent_address"])
+            if binding is None:
+                continue
+            await self.store.enqueue(event_key=f"stripe:{row['reference']}:{verdict.get('action')}",
+                                     buyer_id=row["sender_agent_address"], recipient=row["sender_agent_address"],
+                                     session=row["chat_session_id"] or binding[1], gateway=binding[2],
+                                     result=protocol_result(verdict))
+            pushed += 1
+        return pushed
+
     # ---- payment protocol events -----------------------------------------------------
     async def payment_event(self, envelope: dict) -> dict:
         kind, reference = envelope.get("type"), envelope.get("reference") or ""
@@ -542,8 +583,3 @@ class GatewayService:
                 "reason": "Smoke test only: not verified, nothing was booked.",
                 "followups": [text("Smoke-test commit received (wallet metadata "
                                    f"{'present' if wallet else 'MISSING'}). I did not complete it; nothing was booked.")]}
-
-
-def money_str(minor: int) -> str:
-    from freight_exchange.responses import money
-    return money(minor)

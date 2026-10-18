@@ -2,8 +2,8 @@
 
 Each builder returns a protocol-neutral result {"kind": "CARD", narration, card_kind, card_payload,
 fallback_text}; the gateway serializes it. Actionable CTAs carry `action`, the resource IDs and an opaque
-`card_instance_id`; the backend re-validates every one of them. Money is labelled simulated (freight) or
-testnet (the Fetch service fee) so neither is mistaken for the other.
+`card_instance_id`; the backend re-validates every one of them. Money is labelled simulated (freight), Stripe TEST
+(card checkout) or testnet (the FET fee) so none is mistaken for real money.
 """
 
 from __future__ import annotations
@@ -67,51 +67,81 @@ def cargo_setup_form(*, origins: list[tuple[str, str]], destinations: list[tuple
                   "Ali to Mumbai, arrive by Oct 23'.)")
 
 
-def final_offers_carousel(*, request_id: str, offers: list[dict], card_instance_id: str, header: str,
-                          trace: str = "") -> dict:
+def _short(moment: datetime) -> str:
+    return moment.strftime("%a %b %-d, %H:%M")
+
+
+def negotiation_line(opening_minor: int | None, final_minor: int, counters: int) -> str:
+    """One short buyer-facing line; the full public trace stays in negotiation_messages."""
+    if opening_minor and final_minor < opening_minor:
+        saved = round((opening_minor - final_minor) * 100 / opening_minor)
+        return f"Negotiated {money(opening_minor)} → {money(final_minor)}" + (f" (−{saved}%)" if saved else "")
+    if counters:
+        return f"Carrier held its price after {counters} counter{'s' if counters != 1 else ''}"
+    return "Carrier's opening offer"
+
+
+def final_offers_carousel(*, request_id: str, offers: list[dict], card_instance_id: str, header: str) -> dict:
+    """One fact per field: carrier (title), price (subtitle), schedule + negotiation (two short lines)."""
+    fastest = min(o["arrival_at"] for o in offers)
     items = []
     for o in offers:
-        rounds = o.get("trace") or ""
+        badges = [b for b in (
+            {"label": "Best price", "variant": "success"} if o.get("best") else None,
+            {"label": "Fastest", "variant": "info"} if o["arrival_at"] == fastest and len(offers) > 1 else None,
+        ) if b]
         items.append({
             "id": o["offer_id"],
-            "title": f"{o['carrier_name']} · {o['sailing_id']}",
-            "subtitle": f"{money(o['total_price_minor'])} simulated freight for {o['quantity']}×20GP",
-            "badges": [b for b in ({"label": "Best price", "variant": "success"} if o.get("best") else None,
-                                   {"label": "Negotiated", "variant": "info"} if o.get("negotiated") else None) if b],
-            "secondary_text": (f"Departs {_when(o['departure_at'])}, arrives {_when(o['arrival_at'])}. "
-                               f"Offer valid until {_when(o['expires_at'])}." + (f" {rounds}" if rounds else "")),
-            "primary_cta": {"label": "Choose this offer",
+            "title": o["carrier_name"],
+            "subtitle": f"{money(o['total_price_minor'])} · {o['quantity']}×20GP",
+            "badges": badges,
+            "secondary_text": (f"{o['sailing_id']}: {_short(o['departure_at'])} → {_short(o['arrival_at'])}\n"
+                               + negotiation_line(o.get("opening_minor"), o["total_price_minor"], o.get("counters", 0))),
+            "primary_cta": {"label": "Choose",
                             "selection": {"action": "select_offer", "request_id": request_id,
                                           "offer_id": o["offer_id"], "card_instance_id": card_instance_id}},
         })
-    narration = header + (f"\n{trace}" if trace else "")
-    fallback = narration + "\n" + "\n".join(
+    valid = min(o["expires_at"] for o in offers)
+    fallback = header + "\n" + "\n".join(
         f"- {o['offer_id']}: {o['carrier_name']} {o['sailing_id']}, {money(o['total_price_minor'])}, arrives "
         f"{_when(o['arrival_at'])}" for o in offers) + "\nReply 'select <offer id>' to choose."
-    return result(narration, "carousel", {"title": "Final carrier offers", "subtitle": "Simulated freight market",
-                                          "items": items}, fallback=fallback)
+    return result(header, "carousel", {
+        "title": "Your offers",
+        "subtitle": f"Simulated freight (USD, times UTC) · valid until {valid.strftime('%H:%M')} UTC",
+        "items": items}, fallback=fallback)
 
 
-def booking_review(*, request_id: str, offer: dict, fee_fet: Decimal | None, card_instance_id: str) -> dict:
+def booking_review(*, request_id: str, offer: dict, fee_fet: Decimal | None, card_instance_id: str,
+                   stripe_fee_minor: int | None = None) -> dict:
+    freight = offer["total_price_minor"]
     rows = [
         {"label": "Carrier", "value": offer["display_name"]},
         {"label": "Sailing", "value": f"{offer['sailing_id']} · {offer['origin_port']} → {offer['destination_port']}"},
-        {"label": "Departs / arrives", "value": f"{_when(offer['departure_at'])} / {_when(offer['arrival_at'])}"},
+        {"label": "Departs", "value": _when(offer["departure_at"])},
+        {"label": "Arrives", "value": _when(offer["arrival_at"])},
         {"label": "Containers", "value": f"{offer['quantity']}×20GP"},
-        {"label": "Carrier freight quote", "value": f"{money(offer['total_price_minor'])} USD — simulated, not charged"},
     ]
-    if fee_fet is not None:
-        rows.append({"label": "Booking coordination service",
-                     "value": f"{fee_fet} testnet FET — demonstration payment via Fetch"})
-    rows.append({"label": "Note", "value": "No real freight is purchased or settled."})
+    if stripe_fee_minor is not None:
+        total = freight + stripe_fee_minor
+        rows += [{"label": "Simulated freight", "value": money(freight)},
+                 {"label": "Booking service fee", "value": money(stripe_fee_minor)},
+                 {"label": "Total by card", "value": f"{money(total)} (Stripe TEST mode, no real money)"}]
+        pay_label = f"Confirm and pay {money(total)}"
+        narration = (f"{offer['display_name']} {offer['sailing_id']}: {money(total)} by card "
+                     "(Stripe TEST mode, no real money moves).")
+    else:
+        rows.append({"label": "Carrier freight quote", "value": f"{money(freight)} USD — simulated, not charged"})
+        if fee_fet is not None:
+            rows.append({"label": "Booking coordination service",
+                         "value": f"{fee_fet} testnet FET — demonstration payment via Fetch"})
+        pay_label = "Confirm and pay" if fee_fet is not None else "Confirm (dev mode)"
+        narration = (f"{offer['display_name']} {offer['sailing_id']}: {money(freight)} simulated freight"
+                     + (f", plus a {fee_fet} testnet FET booking-coordination fee." if fee_fet is not None else "."))
     rows.append({"label": "Offer valid until", "value": _when(offer["expires_at"])})
     base = {"request_id": request_id, "offer_id": offer["offer_id"], "card_instance_id": card_instance_id}
     payload = {"title": "Review your booking", "summary_rows": rows,
-               "approve_cta": {"label": "Confirm and pay" if fee_fet is not None else "Confirm (dev mode)",
-                               "selection": {"action": "confirm_booking", **base}, "primary": True},
+               "approve_cta": {"label": pay_label, "selection": {"action": "confirm_booking", **base}, "primary": True},
                "reject_cta": {"label": "Cancel", "selection": {"action": "cancel_booking", **base}}}
-    narration = (f"{offer['display_name']} {offer['sailing_id']}: {money(offer['total_price_minor'])} simulated freight"
-                 + (f", plus a {fee_fet} testnet FET booking-coordination fee." if fee_fet is not None else "."))
     return result(narration, "review", payload, fallback=narration + " Reply 'confirm' or 'cancel'.")
 
 

@@ -5,7 +5,10 @@ Run: uv run uvicorn freight_exchange.exchange_api:app --app-dir src --host 127.0
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import hmac
+import logging
 import os
 
 from dotenv import load_dotenv
@@ -73,7 +76,30 @@ async def health(request: Request):
     return JSONResponse({"ok": True})
 
 
-app = Starlette(routes=[
+async def payment_poller() -> None:
+    """Stripe TEST has no webhook in mailbox mode: settle hosted-link payments and lapsed windows here."""
+    from freight_exchange.fet_booking import payment_mode
+    if payment_mode() != "stripe_test":
+        return
+    interval = float(os.getenv("PAYMENT_POLL_INTERVAL_S", "4"))
+    while True:
+        try:
+            await (await service()).poll_payments()
+        except Exception as exc:  # keep polling; one bad Stripe call must not stop settlement
+            logging.getLogger("exchange_api").warning("payment poll failed: %s", type(exc).__name__)
+        await asyncio.sleep(interval)
+
+
+@contextlib.asynccontextmanager
+async def lifespan(app):
+    task = asyncio.create_task(payment_poller())
+    try:
+        yield
+    finally:
+        task.cancel()
+
+
+app = Starlette(lifespan=lifespan, routes=[
     Route("/health", health),
     Route("/internal/chat/intent", guarded(intent), methods=["POST"]),
     Route("/internal/chat/outbox", guarded(outbox), methods=["GET"]),

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 PAYMENT_PENDING = "PAYMENT_PENDING"
@@ -29,9 +29,10 @@ def booking_fee_minor() -> int:
 @dataclass(frozen=True)
 class CheckoutSession:
     session_id: str
-    url: str
+    url: str | None  # hosted sessions only
     expires_at: datetime
     amount_total: int
+    client_secret: str | None = None  # embedded sessions only (the client renders it with the publishable key)
 
 
 @dataclass(frozen=True)
@@ -95,8 +96,10 @@ class StripeTestPayments:
 
     async def create_checkout(
         self, *, intent_id: str, request_id: str, offer_id: str, freight_minor: int, fee_minor: int,
-        currency: str, freight_label: str, expires_at: datetime,
+        currency: str, freight_label: str, expires_at: datetime, embedded: bool = False, reference: str = "",
     ) -> CheckoutSession:
+        """Hosted (a link) or embedded (`ui_mode=embedded`, rendered in-chat from metadata["stripe"]).
+        Stripe requires expires_at to be 30 min - 24 h out; shorter windows are enforced by expiring the session."""
         line = lambda name, desc, amount: {  # noqa: E731
             "price_data": {"currency": currency.lower(), "unit_amount": amount,
                            "product_data": {"name": name, "description": desc}},
@@ -104,34 +107,45 @@ class StripeTestPayments:
         }
         items = [line("Simulated ocean freight (TEST)", freight_label, freight_minor)]
         if fee_minor:
-            items.append(line("Booking service fee (TEST)", "Freight Recovery Exchange platform fee", fee_minor))
+            items.append(line("Booking service fee (TEST)", "Hormuz Exchange booking service fee", fee_minor))
         metadata = {"intent_id": intent_id, "request_id": request_id, "offer_id": offer_id, "environment": "test"}
-        session = await self._sessions.create_async(
-            params={
-                "mode": "payment",
-                "submit_type": "book",
-                "line_items": items,
-                "client_reference_id": intent_id,
-                "metadata": metadata,
-                "payment_intent_data": {"metadata": metadata},
-                "expires_at": int(expires_at.timestamp()),
+        if reference:
+            metadata["payment_reference"] = reference
+        expires_at = max(expires_at, datetime.now(timezone.utc) + timedelta(minutes=31))
+        params = {
+            "mode": "payment",
+            "submit_type": "book",
+            "line_items": items,
+            "client_reference_id": intent_id,
+            "metadata": metadata,
+            "payment_intent_data": {"metadata": metadata},
+            "expires_at": int(expires_at.timestamp()),
+        }
+        if embedded:
+            params.update({"ui_mode": "embedded", "redirect_on_completion": "if_required",
+                           "return_url": self.success_url + "?session_id={CHECKOUT_SESSION_ID}"})
+        else:
+            params.update({
                 "success_url": self.success_url,
-                # No webhook in mailbox mode: the buyer must tell the agent, which then verifies with Stripe.
+                # No webhook in mailbox mode: the Exchange polls Stripe; "paid" in chat checks immediately.
                 "custom_text": {
-                    "submit": {"message": "TEST MODE: no real money moves. After paying, return to your ASI:One "
-                                          "chat and say \"paid\" so the agent can verify and confirm."},
-                    "after_submit": {"message": "Payment submitted. Go back to your ASI:One chat and say \"paid\" "
-                                                "to receive your booking confirmation."},
+                    "submit": {"message": "TEST MODE: no real money moves. Use card 4242 4242 4242 4242."},
+                    "after_submit": {"message": "Payment submitted. Go back to your ASI:One chat: the confirmation "
+                                                "appears there shortly, or say \"paid\" to check right away."},
                 },
                 "cancel_url": self.cancel_url,
-            },
-            options={"idempotency_key": f"checkout-{intent_id}"},
-        )
+            })
+        key = (f"checkout-{reference}-{'embedded' if embedded else 'hosted'}" if reference
+               else f"checkout-{intent_id}")  # legacy single hosted session
+        session = await self._sessions.create_async(params=params, options={"idempotency_key": key})
         if _get(session, "livemode"):
             raise PaymentConfigError("Stripe returned a live-mode session; refusing")
         return CheckoutSession(_get(session, "id"), _get(session, "url"),
                                datetime.fromtimestamp(_get(session, "expires_at"), timezone.utc),
-                               _get(session, "amount_total"))
+                               _get(session, "amount_total"), _get(session, "client_secret"))
+
+    async def retrieve(self, session_id: str) -> Any:
+        return await self._sessions.retrieve_async(session_id)
 
     async def verify(self, session_id: str, expected: Expected) -> Verification:
         return classify_session(await self._sessions.retrieve_async(session_id), expected)

@@ -142,6 +142,7 @@ class Session:
     current: OfferTerms | None = None
     trace: list[str] = field(default_factory=list)
     reason: str = ""
+    opening_minor: int | None = None  # the carrier's round-0 total, for the buyer-facing summary
     booking_id: str | None = None  # recovery sessions: the displaced booking this session is for
 
 
@@ -230,6 +231,7 @@ class NegotiationService:
     async def _opening_outcome(self, s: Session, out: CarrierOutcome) -> None:
         if out.offer is not None:
             s.current = out.offer
+            s.opening_minor = out.offer.total_price_minor
             s.trace.append(f"opened {money(out.offer.total_price_minor)}")
             await self._message(s, "carrier", s.carrier.agent_address, out.offer.message_id, 0, "PROPOSE_OFFER",
                                 {"offer_id": out.offer.offer_id, "sailing_id": out.offer.sailing_id,
