@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from freight_contracts import CargoSpec, OfferTerms
+from freight_contracts import CargoSpec, OfferTerms, RecoveryCapacityOffers
 from psycopg_pool import AsyncConnectionPool
 
 from carrier_agent.policy import Policy, SailingInventory
@@ -24,6 +24,7 @@ class LoggedOffer:
     round: int
     expires_at: datetime
     counters_used: int
+    offer_kind: str = "quote"  # 'recovery' offers are one-shot and never countered
 
 
 _SAILING_SQL = """
@@ -64,10 +65,13 @@ class CarrierInventory:
         return Policy.from_json(row[0])
 
     async def sailings_for(self, cargo: CargoSpec) -> list[SailingInventory]:
+        return await self.sailings_on_lane(cargo.origin_port, cargo.destination_port, cargo.container_type)
+
+    async def sailings_on_lane(self, origin_port: str, destination_port: str, container_type: str) -> list[SailingInventory]:
         sql = _SAILING_SQL.format(extra="AND s.origin_port = %s AND s.destination_port = %s")
         async with self._pool.connection() as conn:
             rows = await (await conn.execute(
-                sql, (cargo.container_type, self.carrier_id, cargo.origin_port, cargo.destination_port))).fetchall()
+                sql, (container_type, self.carrier_id, origin_port, destination_port))).fetchall()
         return [_sailing(r) for r in rows]
 
     async def sailing(self, sailing_id: str, container_type: str) -> SailingInventory | None:
@@ -88,11 +92,23 @@ class CarrierInventory:
                  offer.round, offer.expires_at),
             )
 
+    async def log_recovery_offers(self, reply: RecoveryCapacityOffers) -> None:
+        """Record each recovery offer under the run id, marked one-shot (offer_kind 'recovery')."""
+        async with self._pool.connection() as conn, conn.transaction():
+            for o in reply.offers:
+                await conn.execute(
+                    """INSERT INTO carrier_offer_log (offer_id, carrier_id, negotiation_id, request_id, sailing_id,
+                           container_type, quantity, total_price_minor, currency, round, expires_at, offer_kind)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 1, %s, 'recovery')""",
+                    (o.offer_id, self.carrier_id, reply.recovery_run_id, reply.recovery_run_id, o.sailing_id,
+                     o.container_type, o.capacity_units, o.total_price_minor, o.currency, o.expires_at),
+                )
+
     async def logged_offer(self, offer_id: str) -> LoggedOffer | None:
         async with self._pool.connection() as conn:
             row = await (await conn.execute(
                 """SELECT offer_id, negotiation_id, request_id, sailing_id, container_type, quantity,
-                          total_price_minor, currency, round, expires_at, counters_used
+                          total_price_minor, currency, round, expires_at, counters_used, offer_kind
                    FROM carrier_offer_log WHERE offer_id = %s AND carrier_id = %s""",
                 (offer_id, self.carrier_id))).fetchone()
         return LoggedOffer(*row) if row else None
