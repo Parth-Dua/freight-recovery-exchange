@@ -129,7 +129,6 @@ class StripeTestPayments:
                 "success_url": self.success_url,
                 # No webhook in mailbox mode: the Exchange polls Stripe; "paid" in chat checks immediately.
                 "custom_text": {
-                    "submit": {"message": "TEST MODE: no real money moves. Use card 4242 4242 4242 4242."},
                     "after_submit": {"message": "Payment submitted. Go back to your ASI:One chat: the confirmation "
                                                 "appears there shortly, or say \"paid\" to check right away."},
                 },

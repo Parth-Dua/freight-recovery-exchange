@@ -25,7 +25,7 @@ uv run uvicorn freight_exchange.exchange_api:app --app-dir src --host 127.0.0.1 
 pids+=($!)
 (cd gateway && uv run python -m buyer_gateway) > logs/gateway.log 2>&1 &
 pids+=($!)
-uv run uvicorn freight_exchange.ops.api:app --app-dir src --host 127.0.0.1 --port 8820 > logs/ops_api.log 2>&1 &
+uv run uvicorn freight_exchange.ops.api:app --app-dir src --host 127.0.0.1 --port 8820 --timeout-graceful-shutdown 2 > logs/ops_api.log 2>&1 &
 pids+=($!)
 echo "started carriers, Exchange, recovery worker, console (http://localhost:8800), Exchange API, buyer gateway, Mission Control (http://127.0.0.1:8820); logs in logs/"
 trap 'kill "${pids[@]}" 2>/dev/null' INT TERM EXIT

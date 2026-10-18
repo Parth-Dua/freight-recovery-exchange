@@ -325,7 +325,7 @@ def _risk_section(event: RiskEvent, touched: list[SailingRow], carrier_id: str) 
     return f"""
 <section class="stack" style="gap: 24px;">
   <div>
-    <p class="muted" style="margin: 0;"><span class="hz"></span> {escape(event.severity.upper())} · {escape(event.category.replace("_", " "))} · simulated</p>
+    <p class="muted" style="margin: 0;"><span class="hz"></span> {escape(event.severity.upper())} · {escape(event.category.replace("_", " "))}</p>
     <h2 style="font-size: 1.75rem; font-weight: 400; margin: 8px 0 0;">{escape(event.region_code.replace("-", " ").title())}</h2>
     <p class="lede">{escape(event.description)}</p>
     <p class="mono muted" style="margin: 4px 0 0; font-size: .875rem;">{escape(event.source_reference)} · {escape(event.risk_event_id)}</p>

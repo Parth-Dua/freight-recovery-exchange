@@ -37,10 +37,16 @@ _state = {"last_event_ts": None, "last_checkpoint": None, "last_capacity": None,
           "started_at": datetime.now(timezone.utc)}
 
 
+_repo_lock = asyncio.Lock()
+
+
 async def pool():
+    """One shared pool; the lock stops concurrent first requests from each opening (and leaking) a pool."""
     global _repo
     if _repo is None:
-        _repo = await get_repository()
+        async with _repo_lock:
+            if _repo is None:
+                _repo = await get_repository()
     return _repo.pool
 
 

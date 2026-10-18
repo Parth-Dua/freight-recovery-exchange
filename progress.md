@@ -402,3 +402,14 @@
 - Done: `/market` in the console (Carbon), three steps: Disruption (withdrawn sailing, stranded containers, who was paired with whom and why), Negotiation (buyer-to-carrier session lines by state, the selected session's agent messages), Allocation (first come, first served vs exchange, where each booking went and its status). Built from one `MarketSnapshot` (`console/carrier_console/market.py`): `load_snapshot` reads the latest `recovery_runs` (stranded snapshot + baseline), `negotiation_sessions`/`negotiation_messages` (recovery kind), `recovery_legs` (latest attempt) and carrier names; `sample_snapshot()` is the demo story, labelled "Sample story" on screen (`/market?sample=1`). X-ray (`&xray=1`): the carrier's floor and the buyer's max (original + pre-approved, per container) on a price track with the deal zone, plus "outside limits, needs OK" when max < floor. For live data X-ray works only when the console starts with `MARKET_XRAY=1`.
 - Evidence: console unit 39 passed (6 new). Sample renders in a local browser for all three steps and X-ray. The live loader runs against the local DB (no recovery run there, so it shows the empty state); NOT yet checked against a real recovery run.
 - NEEDS-FROM-PARTH: run one recovery (`demo.py rehearse --runs 1` or the live flow) on a DB the console can read, then open `/market` to confirm the live snapshot.
+
+### 2026-10-18 — Tisya's carrier console merged into main + final end-to-end
+- Merged `tisya/carrier-dashboard` (IBM Carbon console: Sailings with live ship deck, sailing detail + withdrawal
+  review, Pricing agent preferences, Agent activity, Risk, Market view). Only conflict: progress.md (both kept).
+  Removed a leftover "simulated" label on Risk. `demo_reset.sh` restores carrier policies (seed upserts fixture policy).
+- `scripts/e2e_demo.py --preseeded`: from a paid Buyer A booking, withdraws ATL-101 through the console's real
+  review/withdraw forms → cancellation alert → approval card (Beacon BEA-201, fare difference stated) → approve →
+  Rebooked + fare-difference request ($1,220 = new − original) → Buyer B auto-rebooked to COV-301, Buyer C untouched →
+  Mission Control RESOLVED 2/2, replay coverage complete, all console pages 200, ledger audit PASS: 22/22.
+  The booking half (form → Atlas/Beacon offers → hold → card payment request) passed separately; card payment was
+  verified by Parth in ASI:One. Ops API: one shared DB pool (startup race fixed); 2 s graceful-shutdown timeout.

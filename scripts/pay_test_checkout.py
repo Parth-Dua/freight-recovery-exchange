@@ -19,10 +19,18 @@ def pay(url: str, headless: bool = True) -> str:
         browser = p.chromium.launch(channel="chrome", headless=headless)
         page = browser.new_page()
         page.goto(url, wait_until="networkidle")
-        accordion = page.locator('[data-testid="card-accordion-item-button"]')
-        if accordion.count() and accordion.first.is_visible():
-            accordion.first.click()
         page.fill("#email", "buyer@example.com")
+        # Card fields render only after the "Card" accordion item is opened (when several methods are enabled).
+        if not page.locator("#cardNumber").is_visible():
+            for target in (page.get_by_text("Card", exact=True).first,
+                           page.locator('[data-testid="card-accordion-item-button"]').first):
+                try:
+                    target.click(timeout=5000, force=True)
+                    page.wait_for_selector("#cardNumber", state="visible", timeout=8000)
+                    break
+                except Exception:
+                    continue
+        page.wait_for_selector("#cardNumber", state="visible", timeout=10000)
         page.fill("#cardNumber", "4242 4242 4242 4242")
         page.fill("#cardExpiry", "12 / 34")
         page.fill("#cardCvc", "123")
