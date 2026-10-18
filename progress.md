@@ -308,3 +308,9 @@
 - Files: progress.md (this checkpoint only).
 - Blockers: full recovery execution/approval/results integration remains incomplete; Stripe decline-card human check remains pending.
 - Next: resume Phase 06 contract approval and live-evidence steps in the 19:30 checkpoint; no runtime changes made during this review.
+
+### 2026-10-18 — [Tisya] Market design agreed (branch tisya/market-design)
+- Done: `design/two-sided-freight-market.md`, the design Tisya and Parth agreed: buyer and carrier agents negotiate under private information inside exchange-opened sessions; the exchange pairs agents, checks claims and clears (must-deliver first, first come, first served baseline for comparison). Lists every buyer and carrier field for the cards and dashboards, the Tiger reads/writes per screen, and the build split (Tisya: all UI; Parth: backend and agents, with flagged takeovers). `OWNERSHIP.md`: `design/` added to Tisya's folders.
+- Tests / evidence: docs only; no code or tests changed.
+- NEEDS-FROM-PARTH: agree the handoffs in section 13 (session columns, `market_events` negotiation event names, new `carrier_policies` keys); confirm the 03:00 takeover check.
+- Next: card test, then the carrier dashboard.

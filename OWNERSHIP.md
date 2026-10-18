@@ -38,7 +38,7 @@ Step 3 versus step 4: Parth checks the *message*; Tisya checks the *claim*.
 | Owner | Folders |
 |---|---|
 | Parth | `src/` except `src/freight_exchange/asi/`; `carriers/`; `scripts/`; `docs/`; `tests/` except `tests/asi/`; `packages/freight_contracts/`; root `pyproject.toml` |
-| Tisya | `console/`; `src/freight_exchange/asi/`; `tests/asi/`; `packages/freight_allocation/`; `packages/freight_disruption/`; `.github/`; `OWNERSHIP.md`; demo assets |
+| Tisya | `console/`; `src/freight_exchange/asi/`; `tests/asi/`; `packages/freight_allocation/`; `packages/freight_disruption/`; `.github/`; `OWNERSHIP.md`; `design/`; demo assets |
 | Per seam | `packages/freight_seams/`: each Protocol belongs to its owner (see its README). Signatures change only with both people's yes. |
 
 `src/freight_exchange/asi/` and `packages/freight_allocation/` do not exist yet. `asi/` is the
