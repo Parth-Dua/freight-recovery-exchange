@@ -281,6 +281,11 @@
 - Found: Phase 4 implemented D5 (005: `max_additional_cost_minor` on booking_intents and bookings) but `freight_disruption` still hardcodes 0, and the seam's own reason text ("Withdrawn via DisruptionSeam…") reaches buyers when a withdrawal does not come from the console. Both fixed next in a separate freight_disruption PR.
 - Also found: 16 iCloud " 2" duplicate files landed on main with #10, in console/ and packages/freight_allocation/ (Tisya's folders). Cleanup PR to follow.
 
+### 2026-10-18 — [Tisya] Buyer approval (branch tisya/buyer-approval, builds on #12 → #14)
+- Done: `src/freight_exchange/asi/approvals.py`. `TigerApprovalSeam` implements `ApprovalSeam`; state is event-sourced in market_events (APPROVAL_REQUESTED / APPROVAL_DECIDED, correlation_id = approval_id = apr_<run>_<booking>), no migration. `parse_approval_reply` / `is_approval_reply` read "approve BK-…" / "decline BK-…" (mentions, case, prose, negation, card JSON), deliberately narrow. `handle_approval_reply(store, buyer_id, text)` returns the reply text for the graph. Rules: only the buyer asked can decide (others told nothing exists); first decision wins (per-approval advisory lock); expired (30 min) cannot be approved; idempotent requests; no booking number needed when exactly one is waiting. Reply texts in messages.py. `notify_recovery` now records the approval BEFORE sending NEEDS_APPROVAL and skips the message if recording fails.
+- Evidence: tests/asi 59 passed; root 213. Live on local TimescaleDB: idempotent request; stranger refused; buyer approves (mention + lowercase id); later decline unchanged; 6 concurrent conflicting decisions → one stored; expired reply refused; Tiger shows 3 requests, 2 decisions.
+- NEEDS-FROM-PARTH: route approval replies in the graph BEFORE booking/recovery routes ("rebooking" and "book" would otherwise win); phase 7 confirms a needs-approval booking only when approval_status(apr_<run>_<booking>) == APPROVED.
+
 ### 2026-10-17 — [Parth] Main-branch status review
 - Done: refreshed origin; reviewed main history, merged runtime files, ownership, active Phase 06 spec and PRD booking/recovery scope. Main remains 5c65a3f (#13); Phase 06 ACP recovery implementation is on parth/phase6-recovery-offers, not main.
 - Tests / evidence: read-only review; no tests run. Existing live/unit evidence remains as recorded above.

@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 from freight_seams import DisruptedBooking, RecoveryAssignment, RecoveryOutcome, RecoveryProposal
 from freight_exchange.asi import messages as m
 from freight_exchange.asi import recovery_notify as rn
+from freight_exchange.asi.approvals import MemoryApprovalStore, TigerApprovalSeam
 from freight_exchange.asi.notify import BuyerAddress, Notified
 
 UTC = timezone.utc
@@ -121,6 +122,39 @@ def test_recovery_notifications_use_the_recovery_run_as_their_key(monkeypatch) -
         return {}
 
     monkeypatch.setattr(rn, "carrier_names", no_names)
-    attempts = asyncio.run(rn.notify_recovery(_FakePool(), "uri", "rec_1", [A, B, C], PROPOSAL))
+    approvals = TigerApprovalSeam(MemoryApprovalStore())
+    attempts = asyncio.run(rn.notify_recovery(_FakePool(), "uri", "rec_1", [A, B, C], PROPOSAL, approvals=approvals))
     assert [(a.booking_id, a.kind) for a in attempts] == [("BK-A", m.NEEDS_APPROVAL), ("BK-C", m.NOT_RECOVERED)]
     assert recorded == [("BK-A", "NEEDS_APPROVAL:rec_1"), ("BK-C", "NOT_RECOVERED:rec_1")]
+
+
+def test_an_approval_is_recorded_before_the_buyer_is_asked(monkeypatch) -> None:
+    _, recorded = _wire(monkeypatch)
+
+    async def no_names(pool):
+        return {}
+
+    monkeypatch.setattr(rn, "carrier_names", no_names)
+    store = MemoryApprovalStore()
+    asyncio.run(rn.notify_recovery(_FakePool(), "uri", "rec_1", [A, B, C], PROPOSAL,
+                                   approvals=TigerApprovalSeam(store)))
+    assert list(store.requests) == ["apr_rec_1_BK-A"]
+    assert store.requests["apr_rec_1_BK-A"].buyer_id == A.buyer_id
+
+
+def test_no_approval_message_if_the_request_could_not_be_recorded(monkeypatch) -> None:
+    sent, _ = _wire(monkeypatch)
+
+    async def no_names(pool):
+        return {}
+
+    class BrokenStore(MemoryApprovalStore):
+        async def record_request(self, record):
+            raise ConnectionError("tiger down")
+
+    monkeypatch.setattr(rn, "carrier_names", no_names)
+    attempts = asyncio.run(rn.notify_recovery(_FakePool(), "uri", "rec_1", [A, B, C], PROPOSAL,
+                                              approvals=TigerApprovalSeam(BrokenStore())))
+    assert attempts[0].booking_id == "BK-A" and attempts[0].status == rn.FAILED
+    assert "approval not recorded" in attempts[0].detail
+    assert not any("approve BK-A" in text for _, text in sent)

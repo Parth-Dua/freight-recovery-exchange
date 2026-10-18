@@ -14,6 +14,9 @@ anything is confirmed. Which message each buyer gets:
   proposal only:   needs approval -> NEEDS_APPROVAL; unrecovered -> NOT_RECOVERED;
                    anything else waits silently for confirmation (a plan is not a booking)
 
+An approval request is recorded (approvals.py) BEFORE the message asking for it is sent,
+so a fast reply always finds it. If recording fails, the request message is not sent.
+
 Every buyer is handled on their own: one failure never stops the others, and nothing
 here raises. Each sent message is recorded as a BUYER_NOTIFIED market event keyed by
 (booking, message kind, withdrawal or recovery run), and a retry skips anything already
@@ -33,6 +36,7 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
 from freight_exchange.asi import messages as m
+from freight_exchange.asi.approvals import TigerApprovalSeam, TigerApprovalStore
 from freight_exchange.asi.notify import Notified, buyer_address_for_booking, notify_buyer
 from freight_exchange.observability import log_event
 from freight_seams import DisruptedBooking, RecoveryOutcome, RecoveryProposal
@@ -190,13 +194,24 @@ async def notify_recovery(
     stranded: list[DisruptedBooking],
     proposal: RecoveryProposal,
     outcome: RecoveryOutcome | None = None,
+    approvals: TigerApprovalSeam | None = None,
 ) -> list[NotifyAttempt]:
+    approvals = approvals or TigerApprovalSeam(TigerApprovalStore(pool))
     try:
         names = await carrier_names(pool)
     except Exception:
         names = {}
     attempts = []
     for booking, kind, text in plan_recovery_messages(stranded, proposal, outcome, names):
+        if kind == m.NEEDS_APPROVAL:
+            try:
+                await approvals.request_approval(proposal=proposal, booking_id=booking.booking_id,
+                                                 buyer_id=booking.buyer_id)
+            except Exception as error:  # never ask for an approval we could not record
+                attempt = NotifyAttempt(booking.booking_id, kind, FAILED, f"approval not recorded: {type(error).__name__}")
+                _log(attempt, recovery_run_id)
+                attempts.append(attempt)
+                continue
         attempt = await _deliver(pool, agent_uri, booking, kind, recovery_run_id, text)
         _log(attempt, recovery_run_id)
         attempts.append(attempt)
