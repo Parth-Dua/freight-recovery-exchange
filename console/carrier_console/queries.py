@@ -59,3 +59,18 @@ async def recent_disruptions(pool: AsyncConnectionPool, limit: int = 8) -> list[
             )
         ).fetchall()
     return list(rows)
+
+
+async def committed_bookings(pool: AsyncConnectionPool, sailing_id: str) -> list[tuple[str, str]]:
+    """(booking_id, buyer_id) for every COMMITTED booking on one sailing."""
+    async with pool.connection() as conn:
+        rows = await (
+            await conn.execute(
+                """SELECT booking_id, buyer_id
+                   FROM bookings
+                   WHERE sailing_id = %s AND status = 'COMMITTED'
+                   ORDER BY booking_id""",
+                (sailing_id,),
+            )
+        ).fetchall()
+    return [(row[0], row[1]) for row in rows]
