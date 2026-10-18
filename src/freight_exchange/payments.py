@@ -116,6 +116,13 @@ class StripeTestPayments:
                 "payment_intent_data": {"metadata": metadata},
                 "expires_at": int(expires_at.timestamp()),
                 "success_url": self.success_url,
+                # No webhook in mailbox mode: the buyer must tell the agent, which then verifies with Stripe.
+                "custom_text": {
+                    "submit": {"message": "TEST MODE: no real money moves. After paying, return to your ASI:One "
+                                          "chat and say \"paid\" so the agent can verify and confirm."},
+                    "after_submit": {"message": "Payment submitted. Go back to your ASI:One chat and say \"paid\" "
+                                                "to receive your booking confirmation."},
+                },
                 "cancel_url": self.cancel_url,
             },
             options={"idempotency_key": f"checkout-{intent_id}"},

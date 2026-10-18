@@ -344,8 +344,9 @@ def booking_reply(step) -> str:
             f"- Simulated ocean freight: {money(i['freight_minor'], i['currency'])}\n"
             f"- Booking service fee: {money(i['fee_minor'], i['currency'])}\n"
             f"- **Total: {money(i['freight_minor'] + i['fee_minor'], i['currency'])}**\n"
-            f"Use Stripe's test card {TEST_CARD}. When you've paid, say **paid** — I'll verify it with Stripe "
-            "before asking the carrier to confirm. Say **cancel** to release the hold."
+            f"Use Stripe's test card {TEST_CARD}.\n"
+            "**After paying, come back to this chat and say “paid”** (Stripe then sends you to the ASI:One home page) — "
+            "I verify the payment with Stripe before asking the carrier to confirm. Say **cancel** to release the hold."
         )
     if k == "pending":
         link = f" Checkout: {step.checkout_url}" if step.checkout_url else ""

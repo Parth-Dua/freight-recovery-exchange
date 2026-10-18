@@ -163,6 +163,11 @@
 - AT-04-02 live: `check payment` again → same receipt; bookings 1, CONFIRM_BOOKING messages 1, BOOKING_COMMITTED events 1 (no duplicate commit).
 - Remaining for gate: decline card 4000 0000 0000 0002 does not book (AT-04-05 failure half); full run through ASI:One (AT-04-06) — both need the user.
 
+### 2026-10-17 18:10 — [Parth] Phase 04 AT-04-06 via ASI:One
+- Main ASI:One account, session 8874f869-…: quote req_7f38fdbefbe1 → select 1 req_c7a86b252a1b (duplicate req_567d19458afa served from cache) → "where is the stripe link>" hit `unsupported` (UX gap: fixed — selection reply now says "say book"; stripe/payment-link phrases route to book) → book req_dd9bcb6260ec: Atlas hold on ATL-101 + Stripe TEST checkout, freight $5,180 (price rose with utilization after the earlier test booking) + $25 fee, allowance $300 → user paid with 4242; Stripe redirected to asi1.ai home (configured success_url; no push messages in mailbox mode) → read-only Stripe check: complete/paid → user sent `paid` → req_ba6be5627e40 → receipt "**BK-28C01D37** confirmed by Atlas — claim code SGRGP5". Tiger: booking COMMITTED, buyer_id = main ASI:One sender, total 518000, max_additional_cost_minor 30000; payment PAYMENT_VERIFIED_TEST complete/paid; ATL-101 4/4 COMMITTED.
+- UX: Stripe Checkout `custom_text` (submit + after_submit) tells the buyer to return to ASI:One and say "paid"; checkout reply says the same. Live stripe_smoke still passes; root 154 passed.
+- Remaining for Phase 4 gate: AT-04-05 failure half (decline card 4000 0000 0000 0002 must not book) via ASI:One.
+
 ## Checkpoint template (append concise updates)
 ### YYYY-MM-DD HH:MM — Phase NN
 - Done:

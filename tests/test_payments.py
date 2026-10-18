@@ -76,3 +76,4 @@ def test_checkout_has_freight_and_fee_lines_and_idempotency_key():
     assert params["metadata"]["intent_id"] == params["client_reference_id"] == "intent_1"
     assert options == {"idempotency_key": "checkout-intent_1"}
     assert params["line_items"][0]["price_data"]["currency"] == "usd"
+    assert "say \"paid\"" in params["custom_text"]["after_submit"]["message"]
