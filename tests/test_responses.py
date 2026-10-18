@@ -34,9 +34,10 @@ def test_classify(message, route):
     assert r.classify(message) == route
 
 
-def test_booking_is_declined_without_inventing_a_booking():  # Phase 1 T03 still holds
-    text = r.static_reply(r.ROUTE_BOOKING).lower()
-    assert "not active" in text and "nothing has been booked" in text
+def test_booking_without_selection_invents_nothing():  # Phase 1 T03 spirit: never invent a booking
+    from freight_exchange.booking import BookingStep
+    text = r.booking_reply(BookingStep("no_selection")).lower()
+    assert "select an offer first" in text and "nothing was held or charged" in text
 
 
 @pytest.mark.parametrize("message", ["🚢" * 10_000, "\x00\x01", "x" * 100_000, '{"json": 1}'])
@@ -114,3 +115,18 @@ def test_mentions_are_ignored_for_routing(message, route):
 
 def test_strip_mentions_keeps_emails_and_prices():
     assert r.strip_mentions("@freight-recovery-exc  ping test@example.com $5,600") == "ping test@example.com $5,600"
+
+
+@pytest.mark.parametrize(("message", "route"), [
+    ("book it, auto-rebook up to $300 extra", r.ROUTE_BOOKING),
+    ("please book it", r.ROUTE_BOOKING),
+    ("can you rebook my cargo?", r.ROUTE_RECOVERY),
+    ("my sailing was cancelled", r.ROUTE_RECOVERY),
+    ("I paid", r.ROUTE_PAID),
+    ("cancel", r.ROUTE_CANCEL),
+    ("where is the stripe link>", r.ROUTE_BOOKING),
+    ("how do I pay?", r.ROUTE_BOOKING),
+    ("send me the payment link", r.ROUTE_BOOKING),
+])
+def test_phase4_routes(message, route):
+    assert r.classify(message) == route

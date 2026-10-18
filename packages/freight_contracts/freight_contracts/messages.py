@@ -3,6 +3,10 @@
 Quote: REQUEST_OFFER -> PROPOSE_OFFER | REJECT_OFFER | AGENT_ERROR
 Negotiation (at most one counter per offer):
   COUNTER_OFFER -> ACCEPT_COUNTER | REVISED_OFFER | REJECT_COUNTER | AGENT_ERROR
+Booking (Phase 4, carrier-owned inventory):
+  REQUEST_HOLD    -> HOLD_CONFIRMED | HOLD_REJECTED | AGENT_ERROR
+  RELEASE_HOLD    -> HOLD_RELEASED | AGENT_ERROR
+  CONFIRM_BOOKING -> BOOKING_CONFIRMED | BOOKING_REJECTED | AGENT_ERROR
 
 These are our application messages carried as typed uAgents models — not
 built-in ACP verbs. Money is integer minor units + ISO currency; timestamps
@@ -202,12 +206,97 @@ class AgentError(_SignedReply):
     detail: str
 
 
+# ---- Phase 4: holds and booking confirmation (additive; agreed with Tisya 2026-10-17) ----
+
+class _ExpiringRequest(_Envelope):
+    expires_at: datetime
+
+    @validator("expires_at", allow_reuse=True)
+    def _utc_expires(cls, value):
+        return _require_utc(value)
+
+
+class RequestHold(_ExpiringRequest):
+    """Exchange -> carrier: reserve exactly the units of one current offer for a short time."""
+
+    message_type: Literal["REQUEST_HOLD"] = "REQUEST_HOLD"
+    offer_id: str
+    quantity: int = Field(..., ge=1)
+    buyer_id: str
+    idempotency_key: str = Field(..., min_length=8, max_length=200)
+    requested_ttl_seconds: int = Field(..., ge=60, le=7200)
+
+
+class HoldConfirmed(_SignedReply):
+    message_type: Literal["HOLD_CONFIRMED"] = "HOLD_CONFIRMED"
+    hold_id: str
+    offer_id: str
+    sailing_id: str
+    quantity: int = Field(..., ge=1)
+    expires_at: datetime
+    replay: bool = False
+
+    @validator("expires_at", allow_reuse=True)
+    def _utc_expires(cls, value):
+        return _require_utc(value)
+
+
+class HoldRejected(_SignedReply):
+    message_type: Literal["HOLD_REJECTED"] = "HOLD_REJECTED"
+    offer_id: str
+    code: str  # e.g. INSUFFICIENT_CAPACITY, OFFER_EXPIRED, OFFER_SUPERSEDED, SAILING_NOT_ACTIVE
+    detail: str = ""
+
+
+class ReleaseHold(_ExpiringRequest):
+    message_type: Literal["RELEASE_HOLD"] = "RELEASE_HOLD"
+    hold_id: str
+
+
+class HoldReleased(_SignedReply):
+    message_type: Literal["HOLD_RELEASED"] = "HOLD_RELEASED"
+    hold_id: str
+    final_status: str  # RELEASED | EXPIRED | COMMITTED (idempotent: reports what the hold ended as)
+
+
+class ConfirmBooking(_ExpiringRequest):
+    """Exchange -> carrier, only after the Exchange verified the (test) payment server-side."""
+
+    message_type: Literal["CONFIRM_BOOKING"] = "CONFIRM_BOOKING"
+    hold_id: str
+    payment_reference: str
+    idempotency_key: str = Field(..., min_length=8, max_length=200)
+    intent_id: str
+    claim_code_hash: str
+
+
+class BookingConfirmed(_SignedReply):
+    message_type: Literal["BOOKING_CONFIRMED"] = "BOOKING_CONFIRMED"
+    booking_id: str
+    hold_id: str
+    confirmed_at: datetime
+    payment_terms: str
+    replay: bool = False
+
+    @validator("confirmed_at", allow_reuse=True)
+    def _utc_confirmed(cls, value):
+        return _require_utc(value)
+
+
+class BookingRejected(_SignedReply):
+    message_type: Literal["BOOKING_REJECTED"] = "BOOKING_REJECTED"
+    hold_id: str
+    code: str  # e.g. HOLD_EXPIRED, HOLD_RELEASED, SAILING_NOT_ACTIVE
+    detail: str = ""
+
+
 CarrierReply = Union[ProposeOffer, RejectOffer, AgentError]
 CounterReply = Union[AcceptCounter, RevisedOffer, RejectCounter, AgentError]
 OfferTerms = _OfferTerms
 _REPLY_TYPES = {
     m.__fields__["message_type"].default: m
-    for m in (ProposeOffer, RejectOffer, AgentError, AcceptCounter, RevisedOffer, RejectCounter)
+    for m in (ProposeOffer, RejectOffer, AgentError, AcceptCounter, RevisedOffer, RejectCounter,
+              HoldConfirmed, HoldRejected, HoldReleased, BookingConfirmed, BookingRejected)
 }
 
 

@@ -5,6 +5,14 @@ runtime (full uagents) so schema digests and signatures match exactly.
 """
 
 from freight_contracts.messages import (
+    BookingConfirmed,
+    BookingRejected,
+    ConfirmBooking,
+    HoldConfirmed,
+    HoldRejected,
+    HoldReleased,
+    ReleaseHold,
+    RequestHold,
     SCHEMA_VERSION,
     AcceptCounter,
     AgentError,
@@ -26,6 +34,14 @@ from freight_contracts.messages import (
 from freight_contracts.signing import payload_digest, sign_model, verify_model
 
 __all__ = [
+    "BookingConfirmed",
+    "BookingRejected",
+    "ConfirmBooking",
+    "HoldConfirmed",
+    "HoldRejected",
+    "HoldReleased",
+    "ReleaseHold",
+    "RequestHold",
     "SCHEMA_VERSION",
     "AcceptCounter",
     "CounterOffer",

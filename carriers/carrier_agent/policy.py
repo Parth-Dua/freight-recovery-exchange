@@ -35,6 +35,8 @@ class Policy:
     offer_ttl_seconds: int
     selection: str  # earliest_arrival | earliest_departure
     concession_pct: int = 0  # max discount off our own opening price on a counter (private)
+    payment_terms: str = "Freight prepaid to the carrier before departure"  # shown on receipts
+    max_hold_seconds: int = 3600
 
     @classmethod
     def from_json(cls, data: dict) -> "Policy":

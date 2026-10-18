@@ -1,0 +1,9 @@
+# 0005 — Phase 4 payment model: Stripe TEST checkout with freight + booking fee
+
+- **Date:** 2026-10-17 · **Status:** Accepted (user decision, PRD §21 D1) · **Phase:** 4 · **Owner:** Parth
+- **Decision:** The Stripe test Checkout Session has two line items: (1) the negotiated **simulated ocean freight** total for the selected offer, (2) a **booking service fee** (`BOOKING_FEE_MINOR`, default 2500 = $25). Both are labelled as test/simulated.
+- **No real money:** only `sk_test_` keys are accepted (startup refuses anything else) and any session with `livemode=true` is rejected during verification. Payments use Stripe's official test cards.
+- **What the freight line does NOT mean:** the platform does not settle freight with carriers, hold escrow, or refund. Each carrier's private policy carries `payment_terms` (e.g. prepaid/collect) shown on the receipt. If a sailing is later withdrawn (Phases 5–7), the recovery summary states plainly that freight differences and refunds are not settled (PRD §15.3, spec 04 §4).
+- **Hold / checkout timing (PRD D6):** Stripe requires Checkout `expires_at` 30 min – 24 h after creation, so carrier holds last 30 min (`HOLD_TTL_SECONDS`) and the session expires with the hold. Payment that completes after hold expiry becomes `PAYMENT_RECONCILIATION_REQUIRED` / `BOOKING_PENDING` (spec 04 AT-04-04) — never a silent second charge.
+- **Verification:** server-side `Session.retrieve` (no webhook: the Exchange runs in Agentverse mailbox mode with no public URL). Booking commits only when status=complete, payment_status=paid, amount_total = freight + fee, currency, metadata intent id and livemode=false all match. Chat claims and redirects are never proof (AT-04-03).
+- **Consequences:** fee + freight both appear in the test receipt; demo narrative must call freight "simulated".

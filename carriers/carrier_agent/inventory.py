@@ -43,6 +43,10 @@ class CarrierInventory:
         self._pool = pool
         self.carrier_id = carrier_id
 
+    @property
+    def pool(self) -> AsyncConnectionPool:
+        return self._pool
+
     async def registered_address(self) -> str | None:
         async with self._pool.connection() as conn:
             row = await (await conn.execute(
