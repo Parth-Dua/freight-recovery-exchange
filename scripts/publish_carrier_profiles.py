@@ -76,7 +76,7 @@ Vessels: {vessels}.
 
 ## Who it talks to
 Only the Parley exchange agent: requests from any other sender are refused. Buyers reach it through
-`@freight-disruption` on ASI:One. Payment terms: {policy["payment_terms"]}.
+`@freight-parley` on ASI:One. Payment terms: {policy["payment_terms"]}.
 
 Simulated market: fictional carrier, sailings and prices. No real freight is booked.
 """
