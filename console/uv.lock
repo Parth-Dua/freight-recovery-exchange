@@ -62,6 +62,8 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "freight-disruption" },
+    { name = "freight-seams" },
     { name = "psycopg", extra = ["binary"] },
     { name = "psycopg-pool" },
     { name = "python-dotenv" },
@@ -78,12 +80,51 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115,<0.116" },
+    { name = "freight-disruption", directory = "../packages/freight_disruption" },
+    { name = "freight-seams", directory = "../packages/freight_seams" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
     { name = "psycopg-pool", specifier = ">=3.2,<4" },
     { name = "python-dotenv", specifier = ">=1.0,<2" },
     { name = "python-multipart", specifier = ">=0.0.18,<0.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32,<0.33" },
 ]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8,<9" },
+    { name = "pytest-asyncio", specifier = ">=0.24,<0.25" },
+]
+
+[[package]]
+name = "freight-disruption"
+version = "0.1.0"
+source = { directory = "../packages/freight_disruption" }
+dependencies = [
+    { name = "freight-seams" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "psycopg-pool" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "freight-seams", directory = "../packages/freight_seams" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
+    { name = "psycopg-pool", specifier = ">=3.2,<4" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8,<9" },
+    { name = "pytest-asyncio", specifier = ">=0.24,<0.25" },
+    { name = "python-dotenv", specifier = ">=1.0,<2" },
+]
+
+[[package]]
+name = "freight-seams"
+version = "0.1.0"
+source = { directory = "../packages/freight_seams" }
+
+[package.metadata]
 
 [package.metadata.requires-dev]
 dev = [

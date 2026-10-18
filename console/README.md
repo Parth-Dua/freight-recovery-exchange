@@ -68,6 +68,10 @@ cd console && uv run python -m carrier_console.preseed_cli
 Buyer A is deliberately refused: PRD 16.1 requires Buyer A to be booked live through
 ASI:One so the judge watches that exact booking get disrupted and recovered.
 
+Preseeded buyers accept arrival up to two days after their original sailing
+(`ARRIVAL_SLACK`). Without it, every replacement sailing counts as late and nobody
+preseeded could ever be recovered.
+
 Preseeded offers carry `PRESEED_NOT_A_VERIFIED_CARRIER_SIGNATURE`. Nothing produced by
 the preseed is phase 2, 3 or 4 evidence, and it should never be described as such.
 
@@ -83,17 +87,11 @@ phase 6's capacity accounting wants them gone.
 event_type)` already makes `SAILING_WITHDRAWN` once-only, so a second withdrawal returns
 the original event and writes nothing.
 
-## NEEDS-FROM-PARTH
+## Where the withdrawal logic lives
 
-Neither item blocks this console. Both are in folders you own.
+The withdrawal transaction moved to `packages/freight_disruption/` so the exchange can
+import the same code. `carrier_console/withdrawal.py` re-exports it. After changing that
+package: `uv sync --reinstall-package freight-disruption` (it installs non-editable).
 
-1. **`disruption_events` has no column** for `reason_risk_event_id`, `authorization_ref`
-   or `idempotency_key`, which spec 05 section 5 names in the command. They currently go
-   into the `market_events` payload, and the risk event id is prefixed onto `reason`.
-   If phase 5 wants them as real columns, that is a migration in your folder.
-
-2. **`ROUTE_RECOVERY` in `src/freight_exchange/responses.py:47`** (handled at line 100)
-   matches "withdraw/disrupt/recover" and still returns the canned "Coming next" line. Pointing it at
-   real booking status is the one change that makes a withdrawal visible inside ASI:One,
-   which is what turns this into a demo rather than an internal tool. One function, your
-   file, your call.
+Both earlier NEEDS-FROM-PARTH items are done: migration 003 added the command columns
+(the console now fills them), and `ROUTE_RECOVERY` now reads real booking status (#5).
