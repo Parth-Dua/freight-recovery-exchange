@@ -13,6 +13,8 @@
 
 *LA Hacks 2026*
 
+<a href="https://youtu.be/StnIpUOxzs8"><img src="https://img.youtube.com/vi/StnIpUOxzs8/maxresdefault.jpg" alt="Watch the Parley demo on YouTube" width="720"></a>
+
 </div>
 
 ---
